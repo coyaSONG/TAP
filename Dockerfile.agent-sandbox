@@ -1,0 +1,35 @@
+FROM python:3.11-slim-bullseye
+
+# Install minimal system dependencies for agent execution
+RUN apt-get update && apt-get install -y \
+    curl \
+    git \
+    vim \
+    nano \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create sandbox user with minimal privileges
+RUN groupadd --gid 1000 sandbox && \
+    useradd --uid 1000 --gid sandbox --shell /bin/bash --create-home sandbox
+
+# Install common Python packages for agent work
+RUN pip install --no-cache-dir \
+    requests \
+    pyyaml \
+    toml \
+    click \
+    rich
+
+# Set up workspace
+WORKDIR /workspace
+RUN chown -R sandbox:sandbox /workspace
+
+# Security: Switch to sandbox user
+USER sandbox
+
+# Set environment variables
+ENV PYTHONPATH=/workspace
+ENV HOME=/home/sandbox
+
+# Default command (overridden by orchestrator)
+CMD ["bash"]

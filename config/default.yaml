@@ -1,0 +1,135 @@
+# TAB (Twin-Agent Bridge) Default Configuration
+
+# Application settings
+app:
+  name: "Twin-Agent Bridge"
+  version: "1.0.0"
+  environment: "development"
+  debug: true
+  host: "0.0.0.0"
+  port: 8000
+
+# Logging configuration
+logging:
+  level: "INFO"
+  format: "json"
+  file: "/app/logs/orchestrator.log"
+  max_size_mb: 100
+  backup_count: 5
+  audit_log_file: "/app/logs/audit.jsonl"
+
+# OpenTelemetry configuration
+observability:
+  otlp_endpoint: "http://otel-collector:4317"
+  service_name: "tab-orchestrator"
+  service_version: "1.0.0"
+  enable_tracing: true
+  enable_metrics: true
+  enable_logging: true
+  trace_sampling_rate: 1.0
+
+# Agent configurations
+agents:
+  claude_code:
+    enabled: true
+    type: "claude_code"
+    name: "Claude Code"
+    command: ["claude"]
+    headless_mode: true
+    output_format: "stream-json"
+    session_management: true
+    health_check_interval: 30
+    max_concurrent_sessions: 3
+    execution_limits:
+      max_time_seconds: 120
+      max_cost_usd: 0.5
+
+  codex_cli:
+    enabled: true
+    type: "codex_cli"
+    name: "Codex CLI"
+    command: ["codex"]
+    exec_mode: true
+    approval_mode: "auto"
+    session_log_parsing: true
+    health_check_interval: 30
+    max_concurrent_sessions: 2
+    execution_limits:
+      max_time_seconds: 180
+      max_cost_usd: 1.0
+
+# MCP Server configuration
+mcp:
+  server:
+    host: "0.0.0.0"
+    port: 8001
+    transport: "http"
+    max_connections: 10
+    timeout_seconds: 30
+  client:
+    connection_timeout: 10
+    request_timeout: 120
+    retry_attempts: 3
+    retry_delay: 1.0
+
+# Security and sandboxing
+security:
+  default_policy: "development_safe"
+  sandbox:
+    enabled: true
+    docker:
+      image: "tab-agent-sandbox:latest"
+      network: "tab-agent-network"
+      cpu_limit: "1.0"
+      memory_limit: "512m"
+      execution_timeout: 300
+    file_access:
+      allowed_paths:
+        - "/workspace"
+        - "/tmp"
+      readonly_paths:
+        - "/usr"
+        - "/etc"
+    network_access:
+      enabled: false
+      allowed_hosts: []
+
+# Session management
+sessions:
+  storage_path: "/app/logs/sessions"
+  max_active_sessions: 10
+  session_timeout_minutes: 60
+  turn_timeout_seconds: 120
+  max_turns_per_session: 20
+  auto_cleanup: true
+  cleanup_interval_hours: 24
+
+# Performance settings
+performance:
+  turn_latency_target_ms: 2000
+  concurrent_agent_limit: 5
+  queue_size: 100
+  worker_threads: 4
+  connection_pool_size: 10
+  cache:
+    enabled: true
+    ttl_seconds: 300
+    max_entries: 1000
+
+# Budget and cost controls
+budgets:
+  default_session_budget_usd: 1.0
+  max_session_budget_usd: 10.0
+  daily_budget_usd: 100.0
+  cost_tracking:
+    enabled: true
+    alert_threshold_percent: 80
+    auto_stop_threshold_percent: 95
+
+# Health checks
+health:
+  enabled: true
+  endpoint: "/health"
+  check_agents: true
+  check_dependencies: true
+  timeout_seconds: 5
