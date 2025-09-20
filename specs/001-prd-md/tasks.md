@@ -39,67 +39,67 @@ Single project structure (from plan.md):
 
 ## Phase 3.1: Setup & Infrastructure
 
-- [ ] T001 Create project structure with src/ and tests/ directories per implementation plan
-- [ ] T002 Initialize Python 3.11+ project with pyproject.toml and core dependencies (asyncio, pydantic, opentelemetry-sdk)
-- [ ] T003 [P] Configure development tools: pre-commit hooks, black, isort, mypy in pyproject.toml
-- [ ] T004 [P] Setup Docker environment with rootless configuration and observability stack in docker-compose.yml
-- [ ] T005 [P] Create base configuration files: config/default.yaml, config/policies.yaml
+- [X] T001 Create project structure with src/ and tests/ directories per implementation plan
+- [X] T002 Initialize Python 3.11+ project with pyproject.toml and core dependencies (asyncio, pydantic, opentelemetry-sdk)
+- [X] T003 [P] Configure development tools: pre-commit hooks, black, isort, mypy in pyproject.toml
+- [X] T004 [P] Setup Docker environment with rootless configuration and observability stack in docker-compose.yml
+- [X] T005 [P] Create base configuration files: config/default.yaml, config/policies.yaml
 
 ## Phase 3.2: Tests First (TDD) ⚠️ MUST COMPLETE BEFORE 3.3
 **CRITICAL: These tests MUST be written and MUST FAIL before ANY implementation**
 
 ### Contract Tests (MCP Protocol Validation)
-- [ ] T006 [P] Contract test for start_conversation MCP tool in tests/contract/test_orchestrator_start_conversation.py
-- [ ] T007 [P] Contract test for send_message MCP tool in tests/contract/test_orchestrator_send_message.py
-- [ ] T008 [P] Contract test for get_session_status MCP tool in tests/contract/test_orchestrator_session_status.py
-- [ ] T009 [P] Contract test for list_agents MCP tool in tests/contract/test_orchestrator_list_agents.py
-- [ ] T010 [P] Contract test for export_audit_log MCP tool in tests/contract/test_orchestrator_audit_log.py
-- [ ] T011 [P] Contract test for agent process_request interface in tests/contract/test_agent_interface.py
-- [ ] T012 [P] Contract test for agent health_check interface in tests/contract/test_agent_health.py
+- [X] T006 [P] Contract test for start_conversation MCP tool in tests/contract/test_orchestrator_start_conversation.py
+- [X] T007 [P] Contract test for send_message MCP tool in tests/contract/test_orchestrator_send_message.py
+- [X] T008 [P] Contract test for get_session_status MCP tool in tests/contract/test_orchestrator_session_status.py
+- [X] T009 [P] Contract test for list_agents MCP tool in tests/contract/test_orchestrator_list_agents.py
+- [X] T010 [P] Contract test for export_audit_log MCP tool in tests/contract/test_orchestrator_audit_log.py
+- [X] T011 [P] Contract test for agent process_request interface in tests/contract/test_agent_interface.py
+- [X] T012 [P] Contract test for agent health_check interface in tests/contract/test_agent_health.py
 
 ### Integration Tests (End-to-End Scenarios)
-- [ ] T013 [P] Integration test: Code review cross-verification scenario in tests/integration/test_code_review_scenario.py
-- [ ] T014 [P] Integration test: Bug reproduction and patch proposal scenario in tests/integration/test_bug_reproduction_scenario.py
-- [ ] T015 [P] Integration test: Permission boundary enforcement scenario in tests/integration/test_permission_enforcement.py
-- [ ] T016 [P] Integration test: Performance and observability validation in tests/integration/test_performance_observability.py
+- [X] T013 [P] Integration test: Code review cross-verification scenario in tests/integration/test_code_review_scenario.py
+- [X] T014 [P] Integration test: Bug reproduction and patch proposal scenario in tests/integration/test_bug_reproduction_scenario.py
+- [X] T015 [P] Integration test: Permission boundary enforcement scenario in tests/integration/test_permission_enforcement.py
+- [X] T016 [P] Integration test: Performance and observability validation in tests/integration/test_performance_observability.py
 
 ## Phase 3.3: Core Implementation (ONLY after tests are failing)
 
 ### Data Models (Parallel - Different Files)
-- [ ] T017 [P] ConversationSession model with state transitions in src/models/conversation_session.py
-- [ ] T018 [P] TurnMessage model with validation rules in src/models/turn_message.py
-- [ ] T019 [P] AgentAdapter model with capability definitions in src/models/agent_adapter.py
-- [ ] T020 [P] PolicyConfiguration model with permission rules in src/models/policy_configuration.py
-- [ ] T021 [P] AuditRecord model with security context in src/models/audit_record.py
-- [ ] T022 [P] OrchestrationState model with flow control in src/models/orchestration_state.py
+- [X] T017 [P] ConversationSession model with state transitions in src/models/conversation_session.py
+- [X] T018 [P] TurnMessage model with validation rules in src/models/turn_message.py
+- [X] T019 [P] AgentAdapter model with capability definitions in src/models/agent_adapter.py
+- [X] T020 [P] PolicyConfiguration model with permission rules in src/models/policy_configuration.py
+- [X] T021 [P] AuditRecord model with security context in src/models/audit_record.py
+- [X] T022 [P] OrchestrationState model with flow control in src/models/orchestration_state.py
 
 ### Agent Adapters (Parallel - Different Files)
-- [ ] T023 [P] Claude Code agent adapter with headless mode integration in src/services/claude_code_adapter.py
-- [ ] T024 [P] Codex CLI agent adapter with exec mode integration in src/services/codex_adapter.py
-- [ ] T025 [P] Base agent adapter interface with common functionality in src/services/base_agent_adapter.py
+- [X] T023 [P] Claude Code agent adapter with headless mode integration in src/services/claude_code_adapter.py
+- [X] T024 [P] Codex CLI agent adapter with exec mode integration in src/services/codex_adapter.py
+- [X] T025 [P] Base agent adapter interface with common functionality in src/services/base_agent_adapter.py
 
 ### Core Services (Sequential - Interdependent)
-- [ ] T026 Conversation orchestrator service with turn management in src/services/conversation_orchestrator.py
-- [ ] T027 MCP server implementation for orchestrator tools in src/services/mcp_orchestrator_server.py
-- [ ] T028 Policy enforcement service with security validation in src/services/policy_enforcer.py
-- [ ] T029 Session manager with state persistence in src/services/session_manager.py
+- [X] T026 Conversation orchestrator service with turn management in src/services/conversation_orchestrator.py
+- [X] T027 MCP server implementation for orchestrator tools in src/services/mcp_orchestrator_server.py
+- [X] T028 Policy enforcement service with security validation in src/services/policy_enforcer.py
+- [X] T029 Session manager with state persistence in src/services/session_manager.py
 
 ## Phase 3.4: Integration & Infrastructure
 
 ### Observability (Parallel - Different Files)
-- [ ] T030 [P] OpenTelemetry configuration with OTLP exporters in src/lib/observability.py
-- [ ] T031 [P] Structured logging with audit trail support in src/lib/logging_config.py
-- [ ] T032 [P] Metrics collection for conversation performance in src/lib/metrics.py
+- [X] T030 [P] OpenTelemetry configuration with OTLP exporters in src/lib/observability.py
+- [X] T031 [P] Structured logging with audit trail support in src/lib/logging_config.py
+- [X] T032 [P] Metrics collection for conversation performance in src/lib/metrics.py
 
 ### CLI Interface
-- [ ] T033 Main CLI application with serve and management commands in src/cli/main.py
-- [ ] T034 Configuration management and validation in src/lib/config.py
+- [X] T033 Main CLI application with serve and management commands in src/cli/main.py
+- [X] T034 Configuration management and validation in src/lib/config.py
 
 ## Phase 3.5: Polish & Validation
 
 ### Unit Tests (Parallel - Different Files)
-- [ ] T035 [P] Unit tests for data models validation and serialization in tests/unit/test_models.py
-- [ ] T036 [P] Performance validation: conversation turn latency <2s in tests/unit/test_performance.py
+- [X] T035 [P] Unit tests for data models validation and serialization in tests/unit/test_models.py
+- [X] T036 [P] Performance validation: conversation turn latency <2s in tests/unit/test_performance.py
 
 ## Dependencies
 
