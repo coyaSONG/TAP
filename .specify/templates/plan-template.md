@@ -47,7 +47,20 @@
 ## Constitution Check
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+**Bridge-First Architecture**: Does this feature facilitate secure AI agent communication?
+- [ ] ✅ PASS: Enhances agent interoperability | ❌ FAIL: Violates agent-agnostic design
+
+**Security by Default**: Are permission boundaries and sandbox requirements addressed?
+- [ ] ✅ PASS: Implements proper containment | ❌ FAIL: Bypasses security controls
+
+**Observable Operations**: Are OpenTelemetry tracing and audit logging included?
+- [ ] ✅ PASS: Comprehensive monitoring planned | ❌ FAIL: Missing observability
+
+**Protocol Compliance**: Does this follow MCP standards with appropriate fallbacks?
+- [ ] ✅ PASS: Standards-compliant communication | ❌ FAIL: Proprietary protocols
+
+**Fail-Safe Design**: Are error handling, timeouts, and resource limits planned?
+- [ ] ✅ PASS: Robust failure handling | ❌ FAIL: Missing error resilience
 
 ## Project Structure
 
@@ -208,4 +221,4 @@ ios/ or android/
 - [ ] Complexity deviations documented
 
 ---
-*Based on Constitution v2.1.1 - See `/memory/constitution.md`*
+*Based on Constitution v1.0.0 - See `/memory/constitution.md`*

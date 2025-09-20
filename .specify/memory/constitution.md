@@ -1,50 +1,51 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+<!--
+Sync Impact Report:
+Version change: Initial → 1.0.0
+New constitution created for TAP (Twin-Agent Bridge) project
+Added sections: Core Principles (5), Security Requirements, Development Workflow
+No template files requiring updates at this time
+Follow-up TODOs: None
+-->
+
+# TAP Constitution
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+### I. Bridge-First Architecture
+All features MUST facilitate secure communication between AI coding agents; Components must be agent-agnostic and interoperable; Clear protocol boundaries required between Claude Code and Codex CLI interfaces.
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+**Rationale**: The primary purpose is orchestrating bidirectional Q&A between different AI agents, requiring consistent interfaces regardless of underlying agent implementation.
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+### II. Security by Default
+All agent interactions MUST operate within strict permission boundaries; Sandbox execution mandatory for all external commands; Permission approval required for file system and network access.
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+**Rationale**: AI agents have broad capabilities that require careful containment to prevent unauthorized access or actions during cross-agent collaboration.
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+### III. Observable Operations
+All agent communications MUST be traced via OpenTelemetry; Structured logging required for audit trails; Real-time monitoring of agent interactions and resource consumption.
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+**Rationale**: Cross-agent operations are complex and require comprehensive visibility for debugging, security auditing, and performance optimization.
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+### IV. Protocol Compliance
+Communication MUST follow standardized message schemas; MCP (Model Context Protocol) integration required where available; Graceful fallback to headless/exec modes when MCP unavailable.
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+**Rationale**: Standardized protocols ensure reliable communication between heterogeneous AI agents and enable future extensibility.
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+### V. Fail-Safe Design
+System MUST handle single-agent failures gracefully; Timeout and retry mechanisms mandatory; Cost and iteration budgets enforced to prevent runaway operations.
+
+**Rationale**: Multi-agent systems introduce additional failure modes that require robust error handling and resource protection.
+
+## Security Requirements
+
+Rootless container execution with capability dropping (`--cap-drop ALL`); File system access limited to designated work directories; Network isolation except for essential MCP communications; All agent permissions must be explicitly approved; Sensitive data logging prohibited.
+
+## Development Workflow
+
+Test-Driven Development mandatory for all bridge components; Integration tests required for agent communication protocols; Contract testing for MCP interfaces; Performance validation for multi-turn conversations; Security testing for permission boundary enforcement.
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+Constitution supersedes all development practices; All code changes must demonstrate compliance with security and observability requirements; Cross-agent interaction patterns must be documented and tested; Breaking changes to communication protocols require architectural review; Performance regressions in agent coordination are blocking issues.
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+**Version**: 1.0.0 | **Ratified**: 2025-09-21 | **Last Amended**: 2025-09-21
