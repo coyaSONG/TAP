@@ -87,19 +87,19 @@ Single project structure (from plan.md):
 ## Phase 3.4: Integration & Infrastructure
 
 ### Observability (Parallel - Different Files)
-- [ ] T030 [P] OpenTelemetry configuration with OTLP exporters in src/lib/observability.py
-- [ ] T031 [P] Structured logging with audit trail support in src/lib/logging_config.py
-- [ ] T032 [P] Metrics collection for conversation performance in src/lib/metrics.py
+- [X] T030 [P] OpenTelemetry configuration with OTLP exporters in src/lib/observability.py
+- [X] T031 [P] Structured logging with audit trail support in src/lib/logging_config.py
+- [X] T032 [P] Metrics collection for conversation performance in src/lib/metrics.py
 
 ### CLI Interface
-- [ ] T033 Main CLI application with serve and management commands in src/cli/main.py
-- [ ] T034 Configuration management and validation in src/lib/config.py
+- [X] T033 Main CLI application with serve and management commands in src/cli/main.py
+- [X] T034 Configuration management and validation in src/lib/config.py
 
 ## Phase 3.5: Polish & Validation
 
 ### Unit Tests (Parallel - Different Files)
-- [ ] T035 [P] Unit tests for data models validation and serialization in tests/unit/test_models.py
-- [ ] T036 [P] Performance validation: conversation turn latency <2s in tests/unit/test_performance.py
+- [X] T035 [P] Unit tests for data models validation and serialization in tests/unit/test_models.py
+- [X] T036 [P] Performance validation: conversation turn latency <2s in tests/unit/test_performance.py
 
 ## Dependencies
 

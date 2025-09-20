@@ -5,7 +5,7 @@ from enum import Enum
 from typing import List, Optional, Dict, Any
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, validator, root_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class SessionStatus(str, Enum):
@@ -103,7 +103,8 @@ class ConversationSession(BaseModel):
         use_enum_values = True
         validate_assignment = True
 
-    @validator('participants')
+    @field_validator('participants')
+    @classmethod
     def validate_participants(cls, v):
         """Validate participants list."""
         if len(v) < 2:
@@ -121,24 +122,18 @@ class ConversationSession(BaseModel):
 
         return v
 
-    @validator('updated_at', always=True)
-    def validate_updated_at(cls, v, values):
-        """Ensure updated_at is not before created_at."""
-        created_at = values.get('created_at')
-        if created_at and v < created_at:
+    @model_validator(mode='after')
+    def validate_constraints(self):
+        """Validate all model constraints."""
+        # Ensure updated_at is not before created_at
+        if self.updated_at < self.created_at:
             raise ValueError("updated_at cannot be before created_at")
-        return v
 
-    @root_validator
-    def validate_budget_constraints(cls, values):
-        """Validate budget and cost constraints."""
-        total_cost = values.get('total_cost_usd', 0.0)
-        budget = values.get('budget_usd', 1.0)
-
-        if total_cost > budget:
+        # Validate budget and cost constraints
+        if self.total_cost_usd > self.budget_usd:
             raise ValueError("Total cost cannot exceed budget")
 
-        return values
+        return self
 
     def can_add_turn(self) -> bool:
         """Check if a new turn can be added."""
