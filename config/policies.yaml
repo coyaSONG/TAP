@@ -1,0 +1,275 @@
+# TAB Security Policies Configuration
+
+policies:
+  # Development-safe policy for testing and development
+  development_safe:
+    name: "Development Safe"
+    description: "Safe defaults for development environment"
+    permission_mode: "prompt"
+
+    allowed_tools:
+      - "read_file"
+      - "write_file"
+      - "list_directory"
+      - "run_command"
+      - "search_files"
+      - "git_operations"
+      - "analyze_code"
+      - "create_test"
+      - "run_test"
+
+    disallowed_tools:
+      - "system_admin"
+      - "network_request"
+      - "install_package"
+      - "modify_system"
+      - "access_secrets"
+
+    resource_limits:
+      max_execution_time_seconds: 120
+      max_cost_usd: 1.0
+      max_memory_mb: 512
+      max_file_size_mb: 50
+      max_files_accessed: 100
+
+    file_access_rules:
+      allowed_patterns:
+        - "src/**/*"
+        - "tests/**/*"
+        - "docs/**/*"
+        - "*.md"
+        - "*.txt"
+        - "*.json"
+        - "*.yaml"
+        - "*.yml"
+        - "*.toml"
+        - "*.py"
+        - "*.js"
+        - "*.ts"
+        - ".gitignore"
+        - "requirements.txt"
+        - "pyproject.toml"
+
+      disallowed_patterns:
+        - ".*/.git/**"
+        - "**/.env*"
+        - "**/secrets/**"
+        - "**/credentials/**"
+        - "/etc/**"
+        - "/usr/**"
+        - "/var/**"
+        - "**/*.key"
+        - "**/*.pem"
+        - "**/*.p12"
+
+    network_access_rules:
+      enabled: false
+      allowed_hosts: []
+      allowed_ports: []
+
+    sandbox_config:
+      enabled: true
+      isolation_level: "medium"
+      capabilities_dropped:
+        - "CAP_SYS_ADMIN"
+        - "CAP_NET_ADMIN"
+        - "CAP_SYS_MODULE"
+        - "CAP_SYS_RAWIO"
+
+    approval_required:
+      - "file_write_outside_workspace"
+      - "network_request"
+      - "system_command"
+      - "install_dependency"
+
+  # Read-only strict policy for analysis-only tasks
+  read_only_strict:
+    name: "Read-Only Strict"
+    description: "Strict read-only access for analysis tasks"
+    permission_mode: "auto"
+
+    allowed_tools:
+      - "read_file"
+      - "list_directory"
+      - "search_files"
+      - "analyze_code"
+      - "view_git_history"
+
+    disallowed_tools:
+      - "write_file"
+      - "run_command"
+      - "modify_file"
+      - "create_file"
+      - "delete_file"
+      - "network_request"
+      - "install_package"
+
+    resource_limits:
+      max_execution_time_seconds: 60
+      max_cost_usd: 0.25
+      max_memory_mb: 256
+      max_file_size_mb: 20
+      max_files_accessed: 50
+
+    file_access_rules:
+      allowed_patterns:
+        - "src/**/*"
+        - "tests/**/*"
+        - "docs/**/*"
+        - "*.md"
+        - "*.txt"
+        - "*.json"
+        - "*.yaml"
+        - "*.yml"
+        - "*.py"
+        - "*.js"
+        - "*.ts"
+
+      disallowed_patterns:
+        - "**/*"  # Everything except explicitly allowed
+
+    network_access_rules:
+      enabled: false
+
+    sandbox_config:
+      enabled: true
+      isolation_level: "high"
+      read_only_filesystem: true
+      capabilities_dropped:
+        - "ALL"
+
+    approval_required: []  # No approvals needed for read-only
+
+  # Production policy for live environments
+  production:
+    name: "Production"
+    description: "Production-safe policy with strict controls"
+    permission_mode: "deny"  # Deny by default, require explicit approval
+
+    allowed_tools:
+      - "read_file"
+      - "analyze_code"
+      - "search_files"
+      - "view_git_history"
+
+    disallowed_tools:
+      - "write_file"
+      - "run_command"
+      - "network_request"
+      - "install_package"
+      - "modify_system"
+      - "access_secrets"
+      - "system_admin"
+
+    resource_limits:
+      max_execution_time_seconds: 30
+      max_cost_usd: 0.10
+      max_memory_mb: 128
+      max_file_size_mb: 10
+      max_files_accessed: 20
+
+    file_access_rules:
+      allowed_patterns:
+        - "src/**/*.py"
+        - "tests/**/*.py"
+        - "*.md"
+        - "pyproject.toml"
+
+      disallowed_patterns:
+        - "**/*"  # Everything except explicitly allowed
+
+    network_access_rules:
+      enabled: false
+
+    sandbox_config:
+      enabled: true
+      isolation_level: "maximum"
+      read_only_filesystem: true
+      no_network: true
+      capabilities_dropped:
+        - "ALL"
+
+    approval_required:
+      - "*"  # Everything requires approval
+
+  # Testing policy for running tests
+  testing:
+    name: "Testing"
+    description: "Policy for running tests and test-related operations"
+    permission_mode: "auto"
+
+    allowed_tools:
+      - "read_file"
+      - "write_file"
+      - "run_command"
+      - "run_test"
+      - "create_test"
+      - "analyze_code"
+      - "search_files"
+
+    disallowed_tools:
+      - "network_request"
+      - "install_package"
+      - "modify_system"
+      - "access_secrets"
+
+    resource_limits:
+      max_execution_time_seconds: 300  # Tests may take longer
+      max_cost_usd: 2.0
+      max_memory_mb: 1024
+      max_file_size_mb: 100
+      max_files_accessed: 200
+
+    file_access_rules:
+      allowed_patterns:
+        - "src/**/*"
+        - "tests/**/*"
+        - "*.py"
+        - "*.md"
+        - "*.txt"
+        - "*.json"
+        - "*.yaml"
+        - "pyproject.toml"
+        - "pytest.ini"
+        - ".pytest_cache/**/*"
+
+      disallowed_patterns:
+        - ".*/.git/**"
+        - "**/.env*"
+        - "**/secrets/**"
+
+    network_access_rules:
+      enabled: false
+
+    sandbox_config:
+      enabled: true
+      isolation_level: "medium"
+      temporary_write_access: true
+
+    approval_required: []
+
+# Default policy mappings
+default_policies:
+  conversation_session: "development_safe"
+  agent_health_check: "read_only_strict"
+  test_execution: "testing"
+  production_analysis: "production"
+
+# Policy inheritance
+policy_inheritance:
+  development_safe:
+    inherits_from: null
+
+  read_only_strict:
+    inherits_from: "development_safe"
+    overrides:
+      permission_mode: "auto"
+      allowed_tools: ["read_file", "list_directory", "search_files", "analyze_code"]
+
+  production:
+    inherits_from: "read_only_strict"
+    overrides:
+      permission_mode: "deny"
+      resource_limits:
+        max_execution_time_seconds: 30
+        max_cost_usd: 0.10

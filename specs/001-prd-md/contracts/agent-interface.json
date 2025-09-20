@@ -1,0 +1,298 @@
+{
+  "$schema": "https://schemas.modelcontextprotocol.io/tool-schema.json",
+  "name": "tab-agent-interface",
+  "version": "1.0.0",
+  "description": "Standard interface for TAB agent adapters",
+  "tools": [
+    {
+      "name": "process_request",
+      "description": "Process a request from the orchestrator",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "description": "Unique request identifier"
+          },
+          "content": {
+            "type": "string",
+            "description": "Request content to process",
+            "minLength": 1,
+            "maxLength": 50000
+          },
+          "context": {
+            "type": "object",
+            "properties": {
+              "conversation_history": {
+                "type": "array",
+                "description": "Previous conversation turns for context",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "role": {"type": "string", "enum": ["user", "assistant"]},
+                    "content": {"type": "string"},
+                    "from_agent": {"type": "string"},
+                    "timestamp": {"type": "string", "format": "date-time"}
+                  },
+                  "required": ["role", "content", "from_agent", "timestamp"]
+                },
+                "maxItems": 20
+              },
+              "working_directory": {
+                "type": "string",
+                "description": "Working directory for file operations"
+              },
+              "allowed_files": {
+                "type": "array",
+                "description": "Files the agent is allowed to access",
+                "items": {"type": "string"}
+              },
+              "session_metadata": {
+                "type": "object",
+                "properties": {
+                  "session_id": {"type": "string"},
+                  "topic": {"type": "string"},
+                  "turn_number": {"type": "integer"}
+                }
+              }
+            }
+          },
+          "constraints": {
+            "type": "object",
+            "properties": {
+              "max_execution_time_ms": {
+                "type": "integer",
+                "description": "Maximum execution time in milliseconds",
+                "minimum": 1000,
+                "default": 120000
+              },
+              "max_cost_usd": {
+                "type": "number",
+                "description": "Maximum cost budget for this request",
+                "minimum": 0.001,
+                "default": 0.1
+              },
+              "allowed_tools": {
+                "type": "array",
+                "description": "Tools the agent is allowed to use",
+                "items": {"type": "string"}
+              },
+              "disallowed_tools": {
+                "type": "array",
+                "description": "Tools the agent must not use",
+                "items": {"type": "string"}
+              },
+              "permission_mode": {
+                "type": "string",
+                "enum": ["auto", "prompt", "deny"],
+                "description": "Permission approval mode",
+                "default": "prompt"
+              }
+            }
+          }
+        },
+        "required": ["request_id", "content"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "request_id": {"type": "string"},
+          "status": {
+            "type": "string",
+            "enum": ["completed", "failed", "timeout", "permission_denied"]
+          },
+          "response": {
+            "type": "object",
+            "properties": {
+              "content": {
+                "type": "string",
+                "description": "Response content"
+              },
+              "reasoning": {
+                "type": "string",
+                "description": "Explanation of the agent's reasoning"
+              },
+              "confidence": {
+                "type": "number",
+                "description": "Confidence score (0.0 to 1.0)",
+                "minimum": 0.0,
+                "maximum": 1.0
+              },
+              "next_action_suggested": {
+                "type": "string",
+                "description": "Suggested next action or agent to involve"
+              },
+              "evidence": {
+                "type": "array",
+                "description": "Supporting evidence or references",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "type": {"type": "string"},
+                    "source": {"type": "string"},
+                    "content": {"type": "string"}
+                  }
+                }
+              }
+            },
+            "required": ["content"]
+          },
+          "metadata": {
+            "type": "object",
+            "properties": {
+              "execution_time_ms": {"type": "integer"},
+              "cost_usd": {"type": "number"},
+              "tokens_used": {"type": "integer"},
+              "tools_used": {
+                "type": "array",
+                "items": {"type": "string"}
+              },
+              "files_accessed": {
+                "type": "array",
+                "items": {"type": "string"}
+              },
+              "error_details": {
+                "type": "string",
+                "description": "Error details if status is failed"
+              }
+            }
+          },
+          "convergence_signals": {
+            "type": "object",
+            "description": "Signals indicating conversation convergence",
+            "properties": {
+              "solution_proposed": {"type": "boolean"},
+              "consensus_reached": {"type": "boolean"},
+              "requires_verification": {"type": "boolean"},
+              "additional_input_needed": {"type": "boolean"},
+              "confidence_threshold_met": {"type": "boolean"}
+            }
+          }
+        },
+        "required": ["request_id", "status", "response", "metadata"]
+      }
+    },
+    {
+      "name": "health_check",
+      "description": "Check agent health and readiness",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "deep_check": {
+            "type": "boolean",
+            "description": "Whether to perform deep health check",
+            "default": false
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["healthy", "degraded", "unhealthy"]
+          },
+          "version": {"type": "string"},
+          "capabilities": {
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "resource_usage": {
+            "type": "object",
+            "properties": {
+              "cpu_percent": {"type": "number"},
+              "memory_mb": {"type": "number"},
+              "active_sessions": {"type": "integer"}
+            }
+          },
+          "last_error": {
+            "type": "string",
+            "description": "Last error encountered, if any"
+          },
+          "uptime_seconds": {"type": "integer"}
+        },
+        "required": ["status", "version", "capabilities"]
+      }
+    },
+    {
+      "name": "reset_session",
+      "description": "Reset or clear agent session state",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "description": "Session to reset, or 'all' for global reset"
+          },
+          "preserve_context": {
+            "type": "boolean",
+            "description": "Whether to preserve conversation context",
+            "default": false
+          }
+        },
+        "required": ["session_id"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["success", "failed"]
+          },
+          "sessions_reset": {"type": "integer"},
+          "context_preserved": {"type": "boolean"}
+        },
+        "required": ["status", "sessions_reset"]
+      }
+    }
+  ],
+  "resources": [
+    {
+      "uri": "agent://status",
+      "name": "Agent Status",
+      "description": "Current agent status and metrics",
+      "mimeType": "application/json"
+    },
+    {
+      "uri": "agent://capabilities",
+      "name": "Agent Capabilities",
+      "description": "Detailed agent capabilities and tool descriptions",
+      "mimeType": "application/json"
+    },
+    {
+      "uri": "agent://logs/{level}",
+      "name": "Agent Logs",
+      "description": "Agent execution logs by level",
+      "mimeType": "text/plain"
+    }
+  ],
+  "prompts": [
+    {
+      "name": "explain_reasoning",
+      "description": "Explain the reasoning behind a response",
+      "arguments": [
+        {
+          "name": "request_id",
+          "description": "Request to explain",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "suggest_improvements",
+      "description": "Suggest improvements to a proposed solution",
+      "arguments": [
+        {
+          "name": "solution",
+          "description": "Solution to improve",
+          "required": true
+        },
+        {
+          "name": "context",
+          "description": "Additional context",
+          "required": false
+        }
+      ]
+    }
+  ]
+}

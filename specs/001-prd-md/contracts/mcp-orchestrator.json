@@ -1,0 +1,347 @@
+{
+  "$schema": "https://schemas.modelcontextprotocol.io/tool-schema.json",
+  "name": "tab-orchestrator",
+  "version": "1.0.0",
+  "description": "Twin-Agent Bridge (TAB) Orchestrator MCP Server",
+  "tools": [
+    {
+      "name": "start_conversation",
+      "description": "Start a new multi-agent conversation session",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "topic": {
+            "type": "string",
+            "description": "Initial question or task description",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "participants": {
+            "type": "array",
+            "description": "List of agent identifiers to participate",
+            "items": {
+              "type": "string",
+              "enum": ["claude_code", "codex_cli"]
+            },
+            "minItems": 2,
+            "maxItems": 5
+          },
+          "policy_id": {
+            "type": "string",
+            "description": "Policy configuration to apply",
+            "default": "default"
+          },
+          "max_turns": {
+            "type": "integer",
+            "description": "Maximum conversation turns allowed",
+            "minimum": 1,
+            "maximum": 20,
+            "default": 8
+          },
+          "budget_usd": {
+            "type": "number",
+            "description": "Maximum cost budget in USD",
+            "minimum": 0.01,
+            "maximum": 10.0,
+            "default": 1.0
+          }
+        },
+        "required": ["topic", "participants"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "description": "Unique session identifier"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["active", "failed"],
+            "description": "Session creation status"
+          },
+          "participants": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Confirmed participant agents"
+          },
+          "policy_applied": {
+            "type": "string",
+            "description": "Applied policy configuration"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Session creation timestamp"
+          }
+        },
+        "required": ["session_id", "status", "participants", "created_at"]
+      }
+    },
+    {
+      "name": "send_message",
+      "description": "Send a message in an active conversation",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "description": "Target conversation session"
+          },
+          "content": {
+            "type": "string",
+            "description": "Message content to send",
+            "minLength": 1,
+            "maxLength": 10000
+          },
+          "to_agent": {
+            "type": "string",
+            "description": "Target agent identifier",
+            "enum": ["claude_code", "codex_cli", "auto"]
+          },
+          "attachments": {
+            "type": "array",
+            "description": "Optional file attachments",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {"type": "string"},
+                "type": {"type": "string"},
+                "size": {"type": "integer"}
+              },
+              "required": ["path", "type"]
+            },
+            "maxItems": 10
+          }
+        },
+        "required": ["session_id", "content"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "turn_id": {
+            "type": "string",
+            "description": "Unique turn identifier"
+          },
+          "response": {
+            "type": "object",
+            "properties": {
+              "content": {"type": "string"},
+              "from_agent": {"type": "string"},
+              "metadata": {
+                "type": "object",
+                "properties": {
+                  "cost_usd": {"type": "number"},
+                  "duration_ms": {"type": "integer"},
+                  "tokens_used": {"type": "integer"}
+                }
+              }
+            },
+            "required": ["content", "from_agent"]
+          },
+          "session_status": {
+            "type": "string",
+            "enum": ["active", "completed", "failed", "timeout"],
+            "description": "Updated session status"
+          },
+          "convergence_detected": {
+            "type": "boolean",
+            "description": "Whether conversation convergence was detected"
+          }
+        },
+        "required": ["turn_id", "response", "session_status"]
+      }
+    },
+    {
+      "name": "get_session_status",
+      "description": "Get current status and history of a conversation session",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "description": "Session identifier to query"
+          },
+          "include_history": {
+            "type": "boolean",
+            "description": "Whether to include full turn history",
+            "default": false
+          }
+        },
+        "required": ["session_id"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "session_id": {"type": "string"},
+          "status": {
+            "type": "string",
+            "enum": ["active", "completed", "failed", "timeout"]
+          },
+          "participants": {
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "current_turn": {"type": "integer"},
+          "total_cost_usd": {"type": "number"},
+          "created_at": {"type": "string", "format": "date-time"},
+          "updated_at": {"type": "string", "format": "date-time"},
+          "budget_remaining": {
+            "type": "object",
+            "properties": {
+              "cost_usd": {"type": "number"},
+              "turns": {"type": "integer"}
+            }
+          },
+          "turn_history": {
+            "type": "array",
+            "description": "Included only if include_history=true",
+            "items": {
+              "type": "object",
+              "properties": {
+                "turn_id": {"type": "string"},
+                "from_agent": {"type": "string"},
+                "to_agent": {"type": "string"},
+                "content": {"type": "string"},
+                "timestamp": {"type": "string", "format": "date-time"},
+                "metadata": {"type": "object"}
+              }
+            }
+          }
+        },
+        "required": ["session_id", "status", "participants", "current_turn", "total_cost_usd", "created_at", "updated_at"]
+      }
+    },
+    {
+      "name": "list_agents",
+      "description": "List available agents and their current status",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "include_capabilities": {
+            "type": "boolean",
+            "description": "Whether to include agent capabilities",
+            "default": false
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "agents": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "agent_id": {"type": "string"},
+                "name": {"type": "string"},
+                "type": {"type": "string"},
+                "version": {"type": "string"},
+                "status": {
+                  "type": "string",
+                  "enum": ["available", "busy", "failed", "maintenance"]
+                },
+                "last_health_check": {"type": "string", "format": "date-time"},
+                "capabilities": {
+                  "type": "array",
+                  "description": "Included only if include_capabilities=true",
+                  "items": {"type": "string"}
+                }
+              },
+              "required": ["agent_id", "name", "type", "version", "status", "last_health_check"]
+            }
+          }
+        },
+        "required": ["agents"]
+      }
+    },
+    {
+      "name": "export_audit_log",
+      "description": "Export audit log for a conversation session",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "description": "Session to export audit log for"
+          },
+          "format": {
+            "type": "string",
+            "enum": ["json", "csv", "jsonl"],
+            "default": "json",
+            "description": "Export format"
+          },
+          "include_security_events": {
+            "type": "boolean",
+            "description": "Whether to include security audit events",
+            "default": true
+          }
+        },
+        "required": ["session_id"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "audit_data": {
+            "type": "string",
+            "description": "Serialized audit log data"
+          },
+          "format": {"type": "string"},
+          "record_count": {"type": "integer"},
+          "exported_at": {"type": "string", "format": "date-time"},
+          "security_events_included": {"type": "boolean"}
+        },
+        "required": ["audit_data", "format", "record_count", "exported_at"]
+      }
+    }
+  ],
+  "resources": [
+    {
+      "uri": "tab://sessions/{session_id}",
+      "name": "Conversation Session",
+      "description": "Access to conversation session data",
+      "mimeType": "application/json"
+    },
+    {
+      "uri": "tab://agents/{agent_id}/health",
+      "name": "Agent Health Status",
+      "description": "Real-time agent health information",
+      "mimeType": "application/json"
+    },
+    {
+      "uri": "tab://policies/{policy_id}",
+      "name": "Policy Configuration",
+      "description": "Security and permission policy definitions",
+      "mimeType": "application/yaml"
+    }
+  ],
+  "prompts": [
+    {
+      "name": "conversation_summary",
+      "description": "Generate a summary of a conversation session",
+      "arguments": [
+        {
+          "name": "session_id",
+          "description": "Session to summarize",
+          "required": true
+        },
+        {
+          "name": "summary_type",
+          "description": "Type of summary to generate",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "convergence_analysis",
+      "description": "Analyze conversation for convergence patterns",
+      "arguments": [
+        {
+          "name": "session_id",
+          "description": "Session to analyze",
+          "required": true
+        }
+      ]
+    }
+  ]
+}
