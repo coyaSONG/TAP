@@ -13,7 +13,7 @@ import signal
 import sys
 import time
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 import tempfile
 import os
 
@@ -22,12 +22,15 @@ from tab.services.claude_code_adapter import ClaudeCodeAdapter
 from tab.services.codex_adapter import CodexAdapter
 from tab.services.conversation_orchestrator import ConversationOrchestrator
 from tab.services.session_manager import SessionManager
+from tab.services.policy_enforcer import PolicyEnforcer
 from tab.lib.observability import initialize_telemetry, get_tracer
+from tab.models.agent_adapter import AgentAdapter, AgentStatus
 
 class RealAISession:
     """실제 AI 대화 세션 - Production-Ready with TAB Services"""
 
-    def __init__(self, session_id: str, topic: str, max_turns: int = 10, budget_usd: float = 1.0):
+    def __init__(self, session_id: str, topic: str, max_turns: int = 10,
+                 approval_mode: str = "auto", policy_id: str = "default"):
         self.session_id = session_id
         self.topic = topic
         self.status = "active"
@@ -36,18 +39,67 @@ class RealAISession:
         self.conversation_active = True
         self.user_intervention = False
 
-        # T027: Budget controls and turn limits
+        # T027: Turn limits (subscription-based billing)
         self.max_turns = max_turns
-        self.budget_usd = budget_usd
-        self.total_cost_usd = 0.0
         self.current_turn = 0
 
-        # T025: Structured adapter integration
-        self.claude_adapter = ClaudeCodeAdapter()
-        self.codex_adapter = CodexAdapter()
+        # T029: Approval mode and permission boundaries
+        self.approval_mode = approval_mode  # "auto", "prompt", "deny"
+        self.policy_id = policy_id
+        self.policy_enforcer = PolicyEnforcer()
+        self.pending_approvals = []  # Queue for approval requests
 
-        # T028: OpenTelemetry integration
-        self.tracer = get_tracer(__name__)
+        # T025: Structured adapter integration
+        from tab.models.agent_adapter import ConnectionConfig, ExecutionLimits, AgentType
+
+        claude_config = AgentAdapter(
+            agent_id="claude_code_real_tab",
+            agent_type=AgentType.CLAUDE_CODE,
+            name="Claude Code for Real TAB",
+            version="1.0.0",
+            connection_config=ConnectionConfig(
+                type="cli",
+                endpoint="claude",
+                timeout_seconds=180,
+                retry_attempts=2
+            ),
+            execution_limits=ExecutionLimits(
+                max_execution_time_seconds=180,
+                max_cost_usd=0.0,  # Subscription-based service
+                max_memory_mb=512,
+                max_concurrent_requests=1
+            )
+        )
+        self.claude_adapter = ClaudeCodeAdapter(claude_config)
+
+        # T026: Initialize CodexAdapter with proper configuration
+        codex_config = AgentAdapter(
+            agent_id="codex_cli_real_tab",
+            agent_type=AgentType.CODEX_CLI,
+            name="Codex CLI for Real TAB",
+            version="1.0.0",
+            connection_config=ConnectionConfig(
+                type="cli",
+                endpoint="codex",
+                timeout_seconds=180,
+                retry_attempts=2
+            ),
+            execution_limits=ExecutionLimits(
+                max_execution_time_seconds=180,
+                max_cost_usd=0.0,  # Subscription-based service
+                max_memory_mb=512,
+                max_concurrent_requests=1
+            )
+        )
+        self.codex_adapter = CodexAdapter(codex_config)
+
+        # T028: OpenTelemetry integration (optional)
+        try:
+            self.tracer = get_tracer()
+        except (RuntimeError, Exception) as e:
+            # Telemetry is optional - continue without it
+            print(f"⚠️ OpenTelemetry 비활성화: {e}")
+            self.tracer = None
 
         # 각 에이전트의 대화 컨텍스트 관리
         self.claude_context = []
@@ -57,9 +109,10 @@ class RealAISession:
         turn_id = f"turn-{len(self.turns) + 1:03d}"
         metadata = metadata or {}
 
-        # T027: Budget tracking
+        # T027: Cost tracking (subscription-based, no additional charges)
         if "cost_usd" in metadata:
-            self.total_cost_usd += metadata["cost_usd"]
+            # Note: Using subscription plans, no additional cost tracking needed
+            pass
 
         turn = {
             "turn_id": turn_id,
@@ -80,14 +133,10 @@ class RealAISession:
             self.codex_context.append(f"나: {content}")
             self.claude_context.append(f"Codex CLI: {content}")
 
-    def check_budget_limits(self) -> bool:
-        """T027: Check if budget and turn limits are within bounds"""
+    def check_turn_limits(self) -> bool:
+        """T027: Check if turn limits are within bounds (subscription-based billing)"""
         if self.current_turn >= self.max_turns:
             print(f"⚠️ 턴 제한 도달: {self.current_turn}/{self.max_turns}")
-            return False
-
-        if self.total_cost_usd >= self.budget_usd:
-            print(f"⚠️ 예산 제한 도달: ${self.total_cost_usd:.4f}/${self.budget_usd}")
             return False
 
         return True
@@ -107,6 +156,98 @@ class RealAISession:
         if self.user_intervention:
             return False
         return self.conversation_active
+
+    def validate_agent_call(self, agent_name: str, content: str) -> Dict[str, Any]:
+        """T029: Validate agent call against policy before execution"""
+        validation_result = {
+            "allowed": True,
+            "reason": "",
+            "requires_approval": False,
+            "action_required": "none"
+        }
+
+        # Check if agent calls are allowed by policy
+        tool_validation = self.policy_enforcer.validate_tool_usage(
+            self.policy_id, f"agent_call_{agent_name}", self.session_id
+        )
+
+        if not tool_validation["allowed"]:
+            validation_result.update({
+                "allowed": False,
+                "reason": tool_validation["reason"],
+                "action_required": "block"
+            })
+            return validation_result
+
+        # Check approval mode requirements
+        if self.approval_mode == "prompt":
+            validation_result.update({
+                "requires_approval": True,
+                "reason": "Approval mode requires user confirmation for agent calls"
+            })
+        elif self.approval_mode == "deny":
+            validation_result.update({
+                "allowed": False,
+                "reason": "Approval mode is set to deny all agent calls",
+                "action_required": "block"
+            })
+
+        return validation_result
+
+    async def request_approval(self, action: str, details: Dict[str, Any]) -> bool:
+        """T029: Request user approval for sensitive operations"""
+        if self.approval_mode != "prompt":
+            return self.approval_mode == "auto"
+
+        print(f"\n🔒 승인 요청 - {action}")
+        print(f"   세부사항: {details}")
+        print(f"   정책 ID: {self.policy_id}")
+        print(f"   세션 ID: {self.session_id}")
+
+        while True:
+            try:
+                choice = input("\n승인하시겠습니까? (y/n/d=세부정보): ").strip().lower()
+
+                if choice == 'y':
+                    print("✅ 승인됨")
+                    return True
+                elif choice == 'n':
+                    print("❌ 거부됨")
+                    return False
+                elif choice == 'd':
+                    print(f"\n📋 세부 정보:")
+                    for key, value in details.items():
+                        print(f"   {key}: {value}")
+                    continue
+                else:
+                    print("y(승인), n(거부), d(세부정보)를 입력하세요.")
+
+            except KeyboardInterrupt:
+                print("\n❌ 승인 취소됨")
+                return False
+
+    def check_permission_boundaries(self, operation: str, target: str) -> Dict[str, Any]:
+        """T029: Check permission boundaries for specific operations"""
+        # Validate file access if operation involves files
+        if operation in ["file_read", "file_write", "file_execute"]:
+            return self.policy_enforcer.validate_file_access(
+                self.policy_id, target, operation.split("_")[1], self.session_id
+            )
+
+        # Validate network access
+        elif operation == "network_access":
+            host, port = target.split(":") if ":" in target else (target, 80)
+            return self.policy_enforcer.validate_network_access(
+                self.policy_id, host, int(port), self.session_id
+            )
+
+        # Validate tool usage
+        elif operation == "tool_usage":
+            return self.policy_enforcer.validate_tool_usage(
+                self.policy_id, target, self.session_id
+            )
+
+        return {"allowed": True, "reason": "No specific boundary check needed"}
 
 class RealAITAB:
     """실제 AI CLI 도구를 사용하는 TAB 오케스트레이터"""
@@ -137,7 +278,7 @@ class RealAITAB:
         print()
 
     def setup_conversation(self):
-        """대화 설정"""
+        """대화 설정 with policy and approval mode configuration (T029)"""
         print("🚀 실제 AI 에이전트 대화 세션을 시작합니다!")
         print()
 
@@ -151,16 +292,44 @@ class RealAITAB:
         if not topic:
             topic = "프로그래밍 관련 기술적 토론"
 
-        print(f"\n✅ 주제 설정: {topic}")
-        print(f"🤖 참여 에이전트:")
-        print(f"   - Claude Code (Anthropic)")
-        print(f"   - Codex CLI (OpenAI)")
-        print(f"⚙️  대화 제한: 없음 (무제한)")
-        print(f"🛑 중단: Ctrl+C로 언제든 개입 가능")
+        # T029: Security and approval configuration
+        print(f"\n🔒 보안 및 승인 설정:")
+        print(f"   1. auto   - 자동 승인 (빠른 대화)")
+        print(f"   2. prompt - 사용자 승인 필요 (안전한 대화)")
+        print(f"   3. deny   - 모든 요청 거부 (테스트 모드)")
+
+        approval_mode = input("승인 모드를 선택하세요 (1-3, 기본값: 1): ").strip()
+        approval_modes = {"1": "auto", "2": "prompt", "3": "deny", "": "auto"}
+        approval_mode = approval_modes.get(approval_mode, "auto")
+
+        print(f"\n🛡️  보안 정책 선택:")
+        print(f"   1. default          - 기본 개발 정책")
+        print(f"   2. read_only_strict - 읽기 전용 엄격")
+        print(f"   3. development_safe - 개발 안전 모드")
+
+        policy_choice = input("보안 정책을 선택하세요 (1-3, 기본값: 1): ").strip()
+        policy_ids = {"1": "default", "2": "read_only_strict", "3": "development_safe", "": "default"}
+        policy_id = policy_ids.get(policy_choice, "default")
+
+        # Turn limits (subscription-based CLI tools don't need budget)
+        print(f"\n🔄 대화 제한 설정:")
+        print(f"   💡 Claude Code와 Codex CLI는 구독 플랜을 사용하므로 별도 예산 설정이 불필요합니다.")
+
+        turns_input = input("최대 턴 수 (기본값: 10): ").strip()
+        max_turns = int(turns_input) if turns_input else 10
+
+        print(f"\n✅ 대화 설정 완료:")
+        print(f"   📝 주제: {topic}")
+        print(f"   🤖 참여 에이전트: Claude Code, Codex CLI")
+        print(f"   🔒 승인 모드: {approval_mode}")
+        print(f"   🛡️  보안 정책: {policy_id}")
+        print(f"   🔄 최대 턴: {max_turns}")
+        print(f"   💡 비용: 구독 플랜 기반 (별도 과금 없음)")
+        print(f"   🛑 중단: Ctrl+C로 언제든 개입 가능")
 
         # 세션 생성
         session_id = f"real-ai-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-        self.session = RealAISession(session_id, topic)
+        self.session = RealAISession(session_id, topic, max_turns, approval_mode, policy_id)
 
         return session_id
 
@@ -197,13 +366,36 @@ class RealAITAB:
         return True
 
     async def call_claude_code(self, prompt: str, context: str = "") -> Tuple[str, Dict]:
-        """Claude Code CLI 호출"""
+        """Claude Code CLI 호출 with policy enforcement (T029)"""
         print(f"🤖 Claude Code가 응답 준비 중...")
+
+        # T029: Validate agent call against policy
+        validation = self.session.validate_agent_call("claude_code", prompt)
+        if not validation["allowed"]:
+            error_msg = f"🚫 Claude Code 호출이 정책에 의해 차단됨: {validation['reason']}"
+            print(error_msg)
+            return error_msg, {"success": False, "error": "policy_violation", "policy_reason": validation["reason"]}
+
+        # T029: Request approval if needed
+        if validation.get("requires_approval", False):
+            approval_details = {
+                "agent": "claude_code",
+                "action": "AI agent call",
+                "prompt_length": len(prompt),
+                "context_length": len(context),
+                "session_turn": self.session.current_turn
+            }
+
+            approved = await self.session.request_approval("Claude Code 에이전트 호출", approval_details)
+            if not approved:
+                error_msg = "🚫 Claude Code 호출이 사용자에 의해 거부됨"
+                print(error_msg)
+                return error_msg, {"success": False, "error": "user_denied"}
 
         # 컨텍스트와 함께 프롬프트 구성
         full_prompt = f"""TAB 시스템에서 Codex CLI와 대화하고 있습니다.
 
-주제: {self.topic}
+주제: {self.session.topic}
 
 이전 대화:
 {context}
@@ -259,13 +451,122 @@ class RealAITAB:
             return f"[오류] Claude Code 호출 실패: {e}", {"success": False, "error": str(e)}
 
     async def call_codex_cli(self, prompt: str, context: str = "") -> Tuple[str, Dict]:
-        """Codex CLI 호출"""
+        """Codex CLI 호출 with JSONL session log parsing (T026) and policy enforcement (T029)"""
         print(f"🤖 Codex CLI가 응답 준비 중...")
 
+        # T029: Validate agent call against policy
+        validation = self.session.validate_agent_call("codex_cli", prompt)
+        if not validation["allowed"]:
+            error_msg = f"🚫 Codex CLI 호출이 정책에 의해 차단됨: {validation['reason']}"
+            print(error_msg)
+            return error_msg, {"success": False, "error": "policy_violation", "policy_reason": validation["reason"]}
+
+        # T029: Request approval if needed
+        if validation.get("requires_approval", False):
+            approval_details = {
+                "agent": "codex_cli",
+                "action": "AI agent call",
+                "prompt_length": len(prompt),
+                "context_length": len(context),
+                "session_turn": self.session.current_turn,
+                "billing_model": "subscription_based"
+            }
+
+            approved = await self.session.request_approval("Codex CLI 에이전트 호출", approval_details)
+            if not approved:
+                error_msg = "🚫 Codex CLI 호출이 사용자에 의해 거부됨"
+                print(error_msg)
+                return error_msg, {"success": False, "error": "user_denied"}
+
+        # T026: Use CodexAdapter for structured session log parsing
+        try:
+            # Prepare context for adapter
+            conversation_history = []
+            for turn in self.session.turns[-3:]:  # Last 3 turns for context
+                conversation_history.append({
+                    "role": "assistant" if turn["from_agent"] != "user" else "user",
+                    "content": turn["content"],
+                    "from_agent": turn["from_agent"],
+                    "timestamp": turn["timestamp"]
+                })
+
+            adapter_context = {
+                "conversation_history": conversation_history,
+                "working_directory": os.getcwd(),
+                "session_metadata": {
+                    "session_id": self.session.session_id,
+                    "topic": self.session.topic,
+                    "turn_number": self.session.current_turn
+                }
+            }
+
+            # Prepare constraints
+            constraints = {
+                "max_execution_time_ms": 180000,  # 3 minutes
+                "max_cost_usd": 0.0,  # Subscription-based service
+                "permission_mode": "auto",  # For autonomous conversation
+                "allowed_tools": [],  # Let Codex decide
+                "disallowed_tools": []
+            }
+
+            # Format prompt with TAB context
+            full_prompt = f"""TAB 시스템에서 Claude Code와 대화하고 있습니다.
+
+주제: {self.session.topic}
+
+이전 대화:
+{context}
+
+현재 메시지: {prompt}
+
+위 내용에 대해 실용적이고 구현 중심적으로 응답해주세요. Claude Code와 건설적인 토론을 이어가세요."""
+
+            # Use CodexAdapter for structured processing
+            request_id = f"codex-{self.session.session_id}-{self.session.current_turn}"
+            response = await self.codex_adapter.process_request(
+                request_id=request_id,
+                content=full_prompt,
+                context=adapter_context,
+                constraints=constraints
+            )
+
+            # Convert adapter response to real_ai_tab format
+            if response.status == "completed":
+                metadata = {
+                    "duration_seconds": response.execution_time_ms / 1000,
+                    "success": True,
+                    "cli": "codex",
+                    "cost_usd": response.cost_usd,
+                    "tokens_used": response.tokens_used,
+                    "tools_used": response.tools_used,
+                    "files_accessed": response.files_accessed,
+                    "reasoning": response.reasoning,
+                    "confidence": response.confidence
+                }
+                return response.content, metadata
+            else:
+                # Handle failed response
+                error_msg = f"Codex 처리 오류: {response.error_details}"
+                print(f"❌ {error_msg}")
+                metadata = {
+                    "duration_seconds": response.execution_time_ms / 1000 if response.execution_time_ms else 0,
+                    "success": False,
+                    "error": error_msg,
+                    "cli": "codex"
+                }
+                return f"[오류] Codex CLI에서 응답을 생성할 수 없습니다: {response.error_details}", metadata
+
+        except Exception as e:
+            # Fallback to original implementation for compatibility
+            print(f"⚠️ CodexAdapter 사용 실패, 기본 구현으로 폴백: {e}")
+            return await self._call_codex_cli_fallback(prompt, context)
+
+    async def _call_codex_cli_fallback(self, prompt: str, context: str = "") -> Tuple[str, Dict]:
+        """Fallback implementation for Codex CLI calls"""
         # 컨텍스트와 함께 프롬프트 구성
         full_prompt = f"""TAB 시스템에서 Claude Code와 대화하고 있습니다.
 
-주제: {self.topic}
+주제: {self.session.topic}
 
 이전 대화:
 {context}
@@ -335,7 +636,7 @@ class RealAITAB:
             return
 
         print(f"\n🔄 실제 AI 대화를 시작합니다...")
-        print(f"📝 주제: {self.topic}")
+        print(f"📝 주제: {self.session.topic}")
         print(f"=" * 80)
 
         # 첫 번째 에이전트로 Claude Code 시작
@@ -407,6 +708,8 @@ class RealAITAB:
             print(f"   i: 메시지 추가")
             print(f"   s: 상태 확인")
             print(f"   h: 대화 기록")
+            print(f"   p: 정책 상태 확인 (T029)")
+            print(f"   a: 승인 모드 변경 (T029)")
             print(f"   m: 대화 요약 후 종료")
             print(f"   q: 즉시 종료")
 
@@ -426,7 +729,7 @@ class RealAITAB:
 
                 elif choice == 's':
                     print(f"\n📊 현재 세션 상태:")
-                    print(f"   📝 주제: {self.topic}")
+                    print(f"   📝 주제: {self.session.topic}")
                     print(f"   🔄 턴 수: {len(self.session.turns)}")
                     print(f"   ⏰ 경과 시간: {datetime.now() - self.session.created_at}")
 
@@ -437,6 +740,38 @@ class RealAITAB:
                         agent_name = "Claude Code" if turn['from_agent'] == "claude_code" else "Codex CLI"
                         success = "✅" if turn['metadata'].get('success', True) else "❌"
                         print(f"   {agent_name} {success}: {turn['content'][:100]}...")
+
+                # T029: Policy status check
+                elif choice == 'p':
+                    print(f"\n🛡️  현재 정책 상태:")
+                    print(f"   정책 ID: {self.session.policy_id}")
+                    print(f"   승인 모드: {self.session.approval_mode}")
+                    print(f"   대기 중인 승인: {len(self.session.pending_approvals)}")
+
+                    policy = self.session.policy_enforcer.get_policy(self.session.policy_id)
+                    if policy:
+                        print(f"   정책 이름: {policy.name}")
+                        print(f"   허용된 도구: {', '.join(policy.allowed_tools[:5])}{'...' if len(policy.allowed_tools) > 5 else ''}")
+                        print(f"   금지된 도구: {', '.join(policy.disallowed_tools[:3])}{'...' if len(policy.disallowed_tools) > 3 else ''}")
+                        print(f"   권한 모드: {policy.permission_mode}")
+
+                # T029: Change approval mode
+                elif choice == 'a':
+                    print(f"\n🔒 승인 모드 변경:")
+                    print(f"   현재: {self.session.approval_mode}")
+                    print(f"   1. auto   - 자동 승인")
+                    print(f"   2. prompt - 사용자 승인 필요")
+                    print(f"   3. deny   - 모든 요청 거부")
+
+                    new_mode = input("새 모드 선택 (1-3): ").strip()
+                    mode_map = {"1": "auto", "2": "prompt", "3": "deny"}
+
+                    if new_mode in mode_map:
+                        old_mode = self.session.approval_mode
+                        self.session.approval_mode = mode_map[new_mode]
+                        print(f"✅ 승인 모드가 {old_mode} → {self.session.approval_mode}로 변경되었습니다.")
+                    else:
+                        print("❌ 잘못된 선택입니다.")
 
                 elif choice == 'm':
                     print(f"📝 대화 요약을 생성한 후 세션을 종료합니다...")
@@ -464,7 +799,7 @@ class RealAITAB:
 
         # 전체 대화 내용 수집
         conversation_text = []
-        conversation_text.append(f"주제: {self.topic}")
+        conversation_text.append(f"주제: {self.session.topic}")
         conversation_text.append(f"세션 ID: {self.session.session_id}")
         conversation_text.append(f"시작 시간: {self.session.created_at}")
         conversation_text.append(f"총 턴 수: {len(self.session.turns)}")
@@ -560,7 +895,7 @@ class RealAITAB:
                                for turn in self.session.turns)
 
             print(f"📊 대화 통계:")
-            print(f"   📝 주제: {self.topic}")
+            print(f"   📝 주제: {self.session.topic}")
             print(f"   🔄 총 턴 수: {len(self.session.turns)}")
             print(f"   ✅ 성공한 턴: {successful_turns}")
             print(f"   ⏱️  총 AI 응답 시간: {total_duration:.1f}초")

@@ -9,6 +9,9 @@ import json
 import logging
 import logging.config
 import sys
+import hmac
+import hashlib
+import base64
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 from pathlib import Path
@@ -173,6 +176,207 @@ class AuditLogger:
                 "metadata": metadata or {}
             }
         )
+
+
+# T031: Security audit logging with cryptographic integrity
+class CryptographicAuditLogger(AuditLogger):
+    """Audit logger with cryptographic integrity protection for security events."""
+
+    def __init__(self, logger_name: str = "tab.secure_audit", signing_key: Optional[str] = None):
+        super().__init__(logger_name)
+        self.signing_key = signing_key or self._generate_signing_key()
+        self.sequence_number = 0
+        self.previous_hash = None
+
+    def _generate_signing_key(self) -> str:
+        """Generate a random signing key for audit log integrity."""
+        import os
+        return base64.b64encode(os.urandom(32)).decode('utf-8')
+
+    def _calculate_signature(self, log_data: Dict[str, Any]) -> str:
+        """Calculate HMAC signature for log entry."""
+        log_string = json.dumps(log_data, sort_keys=True, separators=(',', ':'))
+        return hmac.new(
+            self.signing_key.encode('utf-8'),
+            log_string.encode('utf-8'),
+            hashlib.sha256
+        ).hexdigest()
+
+    def _calculate_hash(self, log_data: Dict[str, Any]) -> str:
+        """Calculate SHA256 hash of log entry for chain integrity."""
+        log_string = json.dumps(log_data, sort_keys=True, separators=(',', ':'))
+        return hashlib.sha256(log_string.encode('utf-8')).hexdigest()
+
+    def _create_secure_log_entry(self, event_type: str, event_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a cryptographically secured log entry."""
+        self.sequence_number += 1
+
+        base_entry = {
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "sequence_number": self.sequence_number,
+            "event_type": event_type,
+            "previous_hash": self.previous_hash,
+            **event_data
+        }
+
+        # Calculate hash and signature
+        entry_hash = self._calculate_hash(base_entry)
+        signature = self._calculate_signature(base_entry)
+
+        # Add integrity fields
+        secure_entry = {
+            **base_entry,
+            "entry_hash": entry_hash,
+            "signature": signature,
+            "integrity_version": "v1"
+        }
+
+        # Update previous hash for next entry
+        self.previous_hash = entry_hash
+
+        return secure_entry
+
+    def log_security_event_secure(
+        self,
+        event_type: str,
+        severity: str,
+        description: str,
+        agent_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        policy_id: Optional[str] = None,
+        threat_indicators: Optional[List[str]] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """Log a security event with cryptographic integrity protection."""
+        event_data = {
+            "audit_type": "security_secure",
+            "severity": severity,
+            "description": description,
+            "agent_id": agent_id,
+            "session_id": session_id,
+            "policy_id": policy_id,
+            "threat_indicators": threat_indicators or [],
+            "metadata": metadata or {}
+        }
+
+        secure_entry = self._create_secure_log_entry(event_type, event_data)
+
+        # Log with critical level for security events
+        self.logger.critical(
+            f"SECURE AUDIT: {event_type} - {description}",
+            extra={
+                "secure_audit_entry": secure_entry,
+                **secure_entry
+            }
+        )
+
+    def log_policy_violation_secure(
+        self,
+        policy_id: str,
+        violation_type: str,
+        agent_id: str,
+        action_attempted: str,
+        enforcement_result: str,
+        session_id: Optional[str] = None,
+        risk_score: Optional[int] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """Log a policy violation with cryptographic integrity."""
+        event_data = {
+            "audit_type": "policy_violation_secure",
+            "policy_id": policy_id,
+            "violation_type": violation_type,
+            "agent_id": agent_id,
+            "action_attempted": action_attempted,
+            "enforcement_result": enforcement_result,
+            "session_id": session_id,
+            "risk_score": risk_score,
+            "metadata": metadata or {}
+        }
+
+        secure_entry = self._create_secure_log_entry("policy_violation", event_data)
+
+        self.logger.error(
+            f"POLICY VIOLATION: {violation_type} by {agent_id}",
+            extra={
+                "secure_audit_entry": secure_entry,
+                **secure_entry
+            }
+        )
+
+    def log_authentication_event_secure(
+        self,
+        event_type: str,
+        user_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
+        source_ip: Optional[str] = None,
+        success: bool = True,
+        failure_reason: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """Log authentication events with integrity protection."""
+        event_data = {
+            "audit_type": "authentication_secure",
+            "user_id": user_id,
+            "agent_id": agent_id,
+            "source_ip": source_ip,
+            "success": success,
+            "failure_reason": failure_reason,
+            "metadata": metadata or {}
+        }
+
+        secure_entry = self._create_secure_log_entry(event_type, event_data)
+
+        log_level = "info" if success else "warning"
+        getattr(self.logger, log_level)(
+            f"AUTH EVENT: {event_type} - {'SUCCESS' if success else 'FAILURE'}",
+            extra={
+                "secure_audit_entry": secure_entry,
+                **secure_entry
+            }
+        )
+
+    def verify_log_integrity(self, log_entries: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Verify the cryptographic integrity of a sequence of log entries."""
+        verification_result = {
+            "total_entries": len(log_entries),
+            "verified_entries": 0,
+            "failed_entries": 0,
+            "chain_integrity": True,
+            "signature_failures": [],
+            "chain_breaks": []
+        }
+
+        previous_hash = None
+
+        for i, entry in enumerate(log_entries):
+            # Verify signature
+            if "signature" in entry and "integrity_version" in entry:
+                entry_copy = {k: v for k, v in entry.items() if k not in ["signature", "entry_hash"]}
+                expected_signature = self._calculate_signature(entry_copy)
+
+                if entry["signature"] == expected_signature:
+                    verification_result["verified_entries"] += 1
+                else:
+                    verification_result["failed_entries"] += 1
+                    verification_result["signature_failures"].append({
+                        "entry_index": i,
+                        "sequence_number": entry.get("sequence_number"),
+                        "timestamp": entry.get("timestamp")
+                    })
+
+            # Verify chain integrity
+            if previous_hash is not None and entry.get("previous_hash") != previous_hash:
+                verification_result["chain_integrity"] = False
+                verification_result["chain_breaks"].append({
+                    "entry_index": i,
+                    "expected_previous_hash": previous_hash,
+                    "actual_previous_hash": entry.get("previous_hash")
+                })
+
+            previous_hash = entry.get("entry_hash")
+
+        return verification_result
 
 
 def setup_logging(config: Dict[str, Any]) -> None:

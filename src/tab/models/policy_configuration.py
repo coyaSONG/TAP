@@ -29,7 +29,7 @@ class ResourceLimits(BaseModel):
     """Resource constraints and limits."""
 
     max_execution_time_seconds: int = Field(default=120, ge=1, le=3600, description="Maximum execution time")
-    max_cost_usd: float = Field(default=1.0, ge=0.001, le=100.0, description="Maximum cost budget")
+    max_cost_usd: float = Field(default=0.0, ge=0.0, le=100.0, description="Maximum cost budget (0.0 for subscription-based services)")
     max_memory_mb: int = Field(default=512, ge=64, le=8192, description="Maximum memory usage")
     max_file_size_mb: int = Field(default=50, ge=1, le=1024, description="Maximum file size")
     max_files_accessed: int = Field(default=100, ge=1, le=10000, description="Maximum files accessed")
