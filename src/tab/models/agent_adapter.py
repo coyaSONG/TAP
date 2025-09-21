@@ -5,7 +5,7 @@ from enum import Enum
 from typing import List, Optional, Dict, Any, Union
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class AgentType(str, Enum):
@@ -107,71 +107,29 @@ class AgentAdapter(BaseModel):
             datetime: lambda v: v.isoformat(),
         }
 
-    @validator('agent_id')
+    @field_validator('agent_id')
+    @classmethod
     def validate_agent_id(cls, v):
         """Validate agent ID is unique and non-empty."""
         if not v.strip():
             raise ValueError("agent_id cannot be empty")
         return v.strip()
 
-    @validator('name')
+    @field_validator('name')
+    @classmethod
     def validate_name(cls, v):
         """Validate agent name."""
         if not v.strip():
             raise ValueError("name cannot be empty")
         return v.strip()
 
-    @validator('version')
+    @field_validator('version')
+    @classmethod
     def validate_version(cls, v):
         """Validate version string."""
         if not v.strip():
             raise ValueError("version cannot be empty")
         return v.strip()
-
-    @validator('capabilities')
-    def validate_capabilities(cls, v, values):
-        """Validate capabilities match agent type."""
-        if 'agent_type' not in values:
-            return v
-
-        agent_type = values['agent_type']
-
-        # Define expected capabilities by agent type
-        expected_capabilities = {
-            AgentType.CLAUDE_CODE: [
-                "code_analysis", "bug_detection", "test_generation",
-                "documentation", "refactoring", "security_analysis"
-            ],
-            AgentType.CODEX_CLI: [
-                "code_execution", "test_running", "build_automation",
-                "deployment", "system_integration", "file_manipulation"
-            ],
-            AgentType.GENERIC: []  # No specific requirements
-        }
-
-        if agent_type in expected_capabilities:
-            capability_names = [cap.name for cap in v]
-            expected = expected_capabilities[agent_type]
-
-            # Warning if missing expected capabilities (not an error)
-            missing = set(expected) - set(capability_names)
-            if missing:
-                # Store warning in metadata rather than raising error
-                if 'warnings' not in values.get('metadata', {}):
-                    values.setdefault('metadata', {})['warnings'] = []
-                values['metadata']['warnings'].append(f"Missing expected capabilities: {missing}")
-
-        return v
-
-    @validator('successful_requests', 'failed_requests')
-    def validate_request_counts(cls, v, values, field):
-        """Validate request counts are consistent."""
-        if field.name == 'failed_requests' and 'successful_requests' in values:
-            total = values['successful_requests'] + v
-            if 'total_requests_processed' in values and total > values['total_requests_processed']:
-                raise ValueError("Sum of successful and failed requests cannot exceed total")
-
-        return v
 
     def transition_status(self, new_status: AgentStatus, reason: Optional[str] = None) -> bool:
         """

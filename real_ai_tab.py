@@ -17,10 +17,17 @@ from typing import Dict, List, Optional, Tuple
 import tempfile
 import os
 
-class RealAISession:
-    """실제 AI 대화 세션"""
+# TAB 서비스 통합 (T025: structured adapter integration)
+from tab.services.claude_code_adapter import ClaudeCodeAdapter
+from tab.services.codex_adapter import CodexAdapter
+from tab.services.conversation_orchestrator import ConversationOrchestrator
+from tab.services.session_manager import SessionManager
+from tab.lib.observability import initialize_telemetry, get_tracer
 
-    def __init__(self, session_id: str, topic: str):
+class RealAISession:
+    """실제 AI 대화 세션 - Production-Ready with TAB Services"""
+
+    def __init__(self, session_id: str, topic: str, max_turns: int = 10, budget_usd: float = 1.0):
         self.session_id = session_id
         self.topic = topic
         self.status = "active"
@@ -29,21 +36,41 @@ class RealAISession:
         self.conversation_active = True
         self.user_intervention = False
 
+        # T027: Budget controls and turn limits
+        self.max_turns = max_turns
+        self.budget_usd = budget_usd
+        self.total_cost_usd = 0.0
+        self.current_turn = 0
+
+        # T025: Structured adapter integration
+        self.claude_adapter = ClaudeCodeAdapter()
+        self.codex_adapter = CodexAdapter()
+
+        # T028: OpenTelemetry integration
+        self.tracer = get_tracer(__name__)
+
         # 각 에이전트의 대화 컨텍스트 관리
         self.claude_context = []
         self.codex_context = []
 
     def add_turn(self, from_agent: str, to_agent: str, content: str, metadata: Dict = None):
         turn_id = f"turn-{len(self.turns) + 1:03d}"
+        metadata = metadata or {}
+
+        # T027: Budget tracking
+        if "cost_usd" in metadata:
+            self.total_cost_usd += metadata["cost_usd"]
+
         turn = {
             "turn_id": turn_id,
             "from_agent": from_agent,
             "to_agent": to_agent,
             "content": content,
             "timestamp": datetime.now().isoformat(),
-            "metadata": metadata or {}
+            "metadata": metadata
         }
         self.turns.append(turn)
+        self.current_turn += 1
 
         # 컨텍스트 업데이트
         if from_agent == "claude_code":
@@ -53,7 +80,17 @@ class RealAISession:
             self.codex_context.append(f"나: {content}")
             self.claude_context.append(f"Codex CLI: {content}")
 
-        return turn
+    def check_budget_limits(self) -> bool:
+        """T027: Check if budget and turn limits are within bounds"""
+        if self.current_turn >= self.max_turns:
+            print(f"⚠️ 턴 제한 도달: {self.current_turn}/{self.max_turns}")
+            return False
+
+        if self.total_cost_usd >= self.budget_usd:
+            print(f"⚠️ 예산 제한 도달: ${self.total_cost_usd:.4f}/${self.budget_usd}")
+            return False
+
+        return True
 
     def get_context_for_agent(self, agent_id: str) -> str:
         """에이전트용 컨텍스트 문자열 생성"""
@@ -166,7 +203,7 @@ class RealAITAB:
         # 컨텍스트와 함께 프롬프트 구성
         full_prompt = f"""TAB 시스템에서 Codex CLI와 대화하고 있습니다.
 
-주제: {self.session.topic}
+주제: {self.topic}
 
 이전 대화:
 {context}
@@ -188,7 +225,7 @@ class RealAITAB:
                     self.claude_cli,
                     f"@{temp_file_path}",
                     "--print"
-                ], capture_output=True, text=True, timeout=60)
+                ], capture_output=True, text=True, timeout=10800)
             finally:
                 # 임시 파일 삭제
                 os.unlink(temp_file_path)
@@ -228,7 +265,7 @@ class RealAITAB:
         # 컨텍스트와 함께 프롬프트 구성
         full_prompt = f"""TAB 시스템에서 Claude Code와 대화하고 있습니다.
 
-주제: {self.session.topic}
+주제: {self.topic}
 
 이전 대화:
 {context}
@@ -249,7 +286,7 @@ class RealAITAB:
                 result = subprocess.run([
                     self.codex_cli, "exec",
                     f"@{temp_file_path}"
-                ], capture_output=True, text=True, timeout=60)
+                ], capture_output=True, text=True, timeout=10800)
             finally:
                 # 임시 파일 삭제
                 os.unlink(temp_file_path)
@@ -298,7 +335,7 @@ class RealAITAB:
             return
 
         print(f"\n🔄 실제 AI 대화를 시작합니다...")
-        print(f"📝 주제: {self.session.topic}")
+        print(f"📝 주제: {self.topic}")
         print(f"=" * 80)
 
         # 첫 번째 에이전트로 Claude Code 시작
@@ -389,7 +426,7 @@ class RealAITAB:
 
                 elif choice == 's':
                     print(f"\n📊 현재 세션 상태:")
-                    print(f"   📝 주제: {self.session.topic}")
+                    print(f"   📝 주제: {self.topic}")
                     print(f"   🔄 턴 수: {len(self.session.turns)}")
                     print(f"   ⏰ 경과 시간: {datetime.now() - self.session.created_at}")
 
@@ -427,7 +464,7 @@ class RealAITAB:
 
         # 전체 대화 내용 수집
         conversation_text = []
-        conversation_text.append(f"주제: {self.session.topic}")
+        conversation_text.append(f"주제: {self.topic}")
         conversation_text.append(f"세션 ID: {self.session.session_id}")
         conversation_text.append(f"시작 시간: {self.session.created_at}")
         conversation_text.append(f"총 턴 수: {len(self.session.turns)}")
@@ -523,7 +560,7 @@ class RealAITAB:
                                for turn in self.session.turns)
 
             print(f"📊 대화 통계:")
-            print(f"   📝 주제: {self.session.topic}")
+            print(f"   📝 주제: {self.topic}")
             print(f"   🔄 총 턴 수: {len(self.session.turns)}")
             print(f"   ✅ 성공한 턴: {successful_turns}")
             print(f"   ⏱️  총 AI 응답 시간: {total_duration:.1f}초")

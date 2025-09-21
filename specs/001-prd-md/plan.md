@@ -1,64 +1,74 @@
-# Implementation Plan: Twin-Agent Bridge (TAB)
+
+# Implementation Plan: Twin-Agent Bridge (TAB) PRD Implementation
 
 **Branch**: `001-prd-md` | **Date**: 2025-09-21 | **Spec**: [spec.md](./spec.md)
 **Input**: Feature specification from `/home/chsong/projects/TAP/specs/001-prd-md/spec.md`
 
 ## Execution Flow (/plan command scope)
 ```
-1. Load feature spec from Input path ✓
-   → Feature spec loaded successfully
-2. Fill Technical Context (scan for NEEDS CLARIFICATION) ✓
-   → Detected Project Type: single (orchestrator system)
-   → Set Structure Decision: Option 1 (single project)
-3. Fill the Constitution Check section ✓
-4. Evaluate Constitution Check section
-   → Progress: Initial Constitution Check
+1. Load feature spec from Input path
+   → If not found: ERROR "No feature spec at {path}"
+2. Fill Technical Context (scan for NEEDS CLARIFICATION)
+   → Detect Project Type from context (web=frontend+backend, mobile=app+api)
+   → Set Structure Decision based on project type
+3. Fill the Constitution Check section based on the content of the constitution document.
+4. Evaluate Constitution Check section below
+   → If violations exist: Document in Complexity Tracking
+   → If no justification possible: ERROR "Simplify approach first"
+   → Update Progress Tracking: Initial Constitution Check
 5. Execute Phase 0 → research.md
-   → Resolving NEEDS CLARIFICATION items
-6. Execute Phase 1 → contracts, data-model.md, quickstart.md, CLAUDE.md
+   → If NEEDS CLARIFICATION remain: ERROR "Resolve unknowns"
+6. Execute Phase 1 → contracts, data-model.md, quickstart.md, agent-specific template file (e.g., `CLAUDE.md` for Claude Code, `.github/copilot-instructions.md` for GitHub Copilot, `GEMINI.md` for Gemini CLI, `QWEN.md` for Qwen Code or `AGENTS.md` for opencode).
 7. Re-evaluate Constitution Check section
-   → Progress: Post-Design Constitution Check
-8. Plan Phase 2 → Describe task generation approach
+   → If new violations: Refactor design, return to Phase 1
+   → Update Progress Tracking: Post-Design Constitution Check
+8. Plan Phase 2 → Describe task generation approach (DO NOT create tasks.md)
 9. STOP - Ready for /tasks command
 ```
 
+**IMPORTANT**: The /plan command STOPS at step 7. Phases 2-4 are executed by other commands:
+- Phase 2: /tasks command creates tasks.md
+- Phase 3-4: Implementation execution (manual or via tools)
+
 ## Summary
-TAB (Twin-Agent Bridge) is a secure orchestration system that enables Claude Code and Codex CLI to engage in structured bidirectional conversations for cross-verification of code analysis, bug reproduction, and patch proposals. The system provides MCP integration, sandbox execution, OpenTelemetry observability, and permission controls to ensure safe multi-agent collaboration.
+Secure orchestration system enabling bidirectional conversations between Claude Code and Codex CLI agents for cross-verification of code analysis, bug reproduction, and patch proposals. Implements MCP-compliant communication protocol with sandbox execution, permission controls, OpenTelemetry observability, and configurable turn limits/budget constraints.
 
 ## Technical Context
-**Language/Version**: Python 3.11+ (async support for concurrent agent management)
-**Primary Dependencies**: asyncio, OpenTelemetry SDK, Pydantic (message validation), subprocess (agent execution)
-**Storage**: File-based session logs (JSONL format), configuration files (TOML/YAML)
-**Testing**: pytest (async testing capabilities), contract testing for MCP interfaces
-**Target Platform**: Linux server (containerized execution preferred)
-**Project Type**: single (orchestrator system with CLI interface)
-**Performance Goals**: <2 seconds per conversation turn, support for 4-6 turn conversations
-**Constraints**: Sandbox execution mandatory, permission approval required, budget/turn limits enforced
-**Scale/Scope**: Support for 2 primary agents (Claude Code, Codex CLI), extensible to additional agents
+**Language/Version**: Python 3.11+
+**Primary Dependencies**: FastAPI, OpenTelemetry, Pydantic, asyncio, Docker, Click
+**Storage**: JSONL session logs, YAML config files, in-memory conversation state
+**Testing**: pytest with asyncio support, contract testing, integration testing
+**Target Platform**: Linux containers with CI/CD integration
+**Project Type**: single - CLI/server application with structured agent communication
+**Performance Goals**: <200ms turn latency, 4-6 turn conversations, handle concurrent sessions
+**Constraints**: Rootless containers, capability dropping, budget/turn limits, MCP compliance
+**Scale/Scope**: Multi-agent orchestration, structured message routing, comprehensive audit trails
+
+**User Context**: real_ai_tab.py is PoC-level that partially meets PRD v0.1 core requirements but lacks structured output parsing, session management, budget controls, and OTel integration. Formal src/tab/* components already exist with PRD-compliant adapters, orchestrator, and observability.
 
 ## Constitution Check
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
 **Bridge-First Architecture**: Does this feature facilitate secure AI agent communication?
-- [x] ✅ PASS: Core orchestration system designed for agent interoperability with standardized message protocols
+- [x] ✅ PASS: Enhances agent interoperability | ❌ FAIL: Violates agent-agnostic design
 
 **Security by Default**: Are permission boundaries and sandbox requirements addressed?
-- [x] ✅ PASS: Rootless container execution, capability dropping, permission approval workflows planned
+- [x] ✅ PASS: Implements proper containment | ❌ FAIL: Bypasses security controls
 
 **Observable Operations**: Are OpenTelemetry tracing and audit logging included?
-- [x] ✅ PASS: Comprehensive OpenTelemetry integration for traces, logs, and metrics across all agent interactions
+- [x] ✅ PASS: Comprehensive monitoring planned | ❌ FAIL: Missing observability
 
 **Protocol Compliance**: Does this follow MCP standards with appropriate fallbacks?
-- [x] ✅ PASS: MCP integration with stdio fallback for headless/exec modes when MCP unavailable
+- [x] ✅ PASS: Standards-compliant communication | ❌ FAIL: Proprietary protocols
 
 **Fail-Safe Design**: Are error handling, timeouts, and resource limits planned?
-- [x] ✅ PASS: Timeout mechanisms, retry logic, cost budgets, and graceful degradation included
+- [x] ✅ PASS: Robust failure handling | ❌ FAIL: Missing error resilience
 
 ## Project Structure
 
 ### Documentation (this feature)
 ```
-specs/001-prd-md/
+specs/[###-feature]/
 ├── plan.md              # This file (/plan command output)
 ├── research.md          # Phase 0 output (/plan command)
 ├── data-model.md        # Phase 1 output (/plan command)
@@ -71,69 +81,137 @@ specs/001-prd-md/
 ```
 # Option 1: Single project (DEFAULT)
 src/
-├── models/              # Data models and schemas
-├── services/            # Core orchestration services
-├── cli/                 # Command-line interface
-└── lib/                 # Utility libraries
+├── models/
+├── services/
+├── cli/
+└── lib/
 
 tests/
-├── contract/            # MCP and API contract tests
-├── integration/         # End-to-end conversation tests
-└── unit/                # Component unit tests
+├── contract/
+├── integration/
+└── unit/
+
+# Option 2: Web application (when "frontend" + "backend" detected)
+backend/
+├── src/
+│   ├── models/
+│   ├── services/
+│   └── api/
+└── tests/
+
+frontend/
+├── src/
+│   ├── components/
+│   ├── pages/
+│   └── services/
+└── tests/
+
+# Option 3: Mobile + API (when "iOS/Android" detected)
+api/
+└── [same as backend above]
+
+ios/ or android/
+└── [platform-specific structure]
 ```
 
-**Structure Decision**: Option 1 (single project) - TAB is an orchestration system, not a web/mobile application
+**Structure Decision**: Option 1 (Single project) - CLI/server application with structured agent communication protocols
 
-## Phase 0: Outline & Research ✅
-*COMPLETED: All technical unknowns resolved*
+## Phase 0: Outline & Research
+1. **Extract unknowns from Technical Context** above:
+   - For each NEEDS CLARIFICATION → research task
+   - For each dependency → best practices task
+   - For each integration → patterns task
 
-### Research Completed:
-1. **MCP Integration Patterns**: ✅ Streamable HTTP selected for production deployment
-2. **Claude Code Headless Mode**: ✅ Stream-json format and session management documented
-3. **Codex CLI Integration**: ✅ CLI execution with session log parsing strategy defined
-4. **Security Sandboxing**: ✅ Rootless Docker with Enhanced Container Isolation
-5. **OpenTelemetry Integration**: ✅ Async Python OTLP exporters with multi-backend export
+2. **Generate and dispatch research agents**:
+   ```
+   For each unknown in Technical Context:
+     Task: "Research {unknown} for {feature context}"
+   For each technology choice:
+     Task: "Find best practices for {tech} in {domain}"
+   ```
 
-**Output**: research.md complete with all NEEDS CLARIFICATION resolved
+3. **Consolidate findings** in `research.md` using format:
+   - Decision: [what was chosen]
+   - Rationale: [why chosen]
+   - Alternatives considered: [what else evaluated]
 
-## Phase 1: Design & Contracts ✅
-*COMPLETED: All design artifacts generated*
+**Output**: research.md with all NEEDS CLARIFICATION resolved
 
-**Completed Outputs**:
-1. **data-model.md**: ✅ Core entities defined with relationships and validation rules
-2. **contracts/**: ✅ MCP protocol schemas for orchestrator and agent interfaces
-3. **Contract tests**: ✅ Schema validation ready for implementation
-4. **quickstart.md**: ✅ End-to-end scenarios and validation procedures
-5. **CLAUDE.md**: ✅ Agent context file updated with TAB project information
+## Phase 1: Design & Contracts
+*Prerequisites: research.md complete*
+
+1. **Extract entities from feature spec** → `data-model.md`:
+   - Entity name, fields, relationships
+   - Validation rules from requirements
+   - State transitions if applicable
+
+2. **Generate API contracts** from functional requirements:
+   - For each user action → endpoint
+   - Use standard REST/GraphQL patterns
+   - Output OpenAPI/GraphQL schema to `/contracts/`
+
+3. **Generate contract tests** from contracts:
+   - One test file per endpoint
+   - Assert request/response schemas
+   - Tests must fail (no implementation yet)
+
+4. **Extract test scenarios** from user stories:
+   - Each story → integration test scenario
+   - Quickstart test = story validation steps
+
+5. **Update agent file incrementally** (O(1) operation):
+   - Run `.specify/scripts/bash/update-agent-context.sh claude` for your AI assistant
+   - If exists: Add only NEW tech from current plan
+   - Preserve manual additions between markers
+   - Update recent changes (keep last 3)
+   - Keep under 150 lines for token efficiency
+   - Output to repository root
+
+**Output**: data-model.md, /contracts/*, failing tests, quickstart.md, agent-specific file
 
 ## Phase 2: Task Planning Approach
 *This section describes what the /tasks command will do - DO NOT execute during /plan*
 
 **Task Generation Strategy**:
+- Load `.specify/templates/tasks-template.md` as base
 - Generate tasks from Phase 1 design docs (contracts, data model, quickstart)
-- Each MCP protocol → contract test task [P]
-- Each entity (ConversationSession, TurnMessage) → model creation task [P]
-- Each user story → integration test task
-- Implementation tasks for orchestrator, agent adapters, CLI interface
+- Real_ai_tab.py upgrade tasks based on PRD compliance gaps identified in user context
+- MCP integration tasks for agent adapters and protocol compliance
+- Security policy enforcement tasks with sandbox execution
+- OpenTelemetry integration tasks for comprehensive observability
+
+**Specific Task Categories**:
+1. **real_ai_tab.py Upgrade Tasks**: Replace stdout parsing with stream-json, add session log parsing, implement budget controls
+2. **Contract Implementation**: MCP orchestrator API, agent interface contracts
+3. **Security Enhancement**: Permission validation, sandbox execution, approval workflows
+4. **Observability Integration**: OTel spans, metrics collection, audit logging
+5. **Testing Infrastructure**: Contract tests, integration scenarios, end-to-end validation
 
 **Ordering Strategy**:
-- TDD order: Contract tests → Data models → Services → CLI
-- Dependency order: Models → Agent adapters → Orchestrator → CLI
-- Mark [P] for parallel execution (independent components)
+- TDD order: Tests before implementation
+- Dependency order: Models → Adapters → Orchestrator → CLI → Integration
+- Priority: Security and observability foundational components first
+- Mark [P] for parallel execution (independent modules)
 
-**Estimated Output**: 25-30 numbered, ordered tasks in tasks.md
+**Estimated Output**: 30-35 numbered, ordered tasks in tasks.md focusing on production readiness
 
 **IMPORTANT**: This phase is executed by the /tasks command, NOT by /plan
 
 ## Phase 3+: Future Implementation
 *These phases are beyond the scope of the /plan command*
 
-**Phase 3**: Task execution (/tasks command creates tasks.md)
-**Phase 4**: Implementation (execute tasks.md following constitutional principles)
+**Phase 3**: Task execution (/tasks command creates tasks.md)  
+**Phase 4**: Implementation (execute tasks.md following constitutional principles)  
 **Phase 5**: Validation (run tests, execute quickstart.md, performance validation)
 
 ## Complexity Tracking
-*No constitutional violations requiring justification*
+*Fill ONLY if Constitution Check has violations that must be justified*
+
+| Violation | Why Needed | Simpler Alternative Rejected Because |
+|-----------|------------|-------------------------------------|
+| [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
+| [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |
+
 
 ## Progress Tracking
 *This checklist is updated during execution flow*
@@ -150,9 +228,7 @@ tests/
 - [x] Initial Constitution Check: PASS
 - [x] Post-Design Constitution Check: PASS
 - [x] All NEEDS CLARIFICATION resolved
-- [x] Complexity deviations documented
-
-**Ready for**: /tasks command execution
+- [ ] Complexity deviations documented
 
 ---
 *Based on Constitution v1.0.0 - See `/memory/constitution.md`*
