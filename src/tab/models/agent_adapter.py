@@ -48,7 +48,7 @@ class ExecutionLimits(BaseModel):
     """Resource and time limits for agent execution."""
 
     max_execution_time_seconds: int = Field(default=120, ge=1, le=600, description="Maximum execution time")
-    max_cost_usd: float = Field(default=0.5, ge=0.001, le=10.0, description="Maximum cost per request")
+    max_cost_usd: float = Field(default=0.0, ge=0.0, le=10.0, description="Maximum cost per request (0.0 for subscription-based services)")
     max_memory_mb: int = Field(default=512, ge=64, le=4096, description="Maximum memory usage")
     max_concurrent_requests: int = Field(default=3, ge=1, le=10, description="Maximum concurrent requests")
 

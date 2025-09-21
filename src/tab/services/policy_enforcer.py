@@ -29,7 +29,7 @@ class PolicyEnforcer:
             policy_id="default",
             name="Default Development Policy",
             description="Standard policy for development environments",
-            allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
+            allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob", "agent_call_claude_code", "agent_call_codex_cli"],
             disallowed_tools=[],
             permission_mode=PermissionMode.PROMPT,
             resource_limits=ResourceLimits(
@@ -323,9 +323,9 @@ class PolicyEnforcer:
         if execution_time > limits.max_execution_time_seconds:
             violations.append(f"Execution time {execution_time}s exceeds limit {limits.max_execution_time_seconds}s")
 
-        # Check cost
+        # Check cost (skip for subscription-based services with max_cost_usd = 0.0)
         cost_usd = resource_usage.get("cost_usd", 0.0)
-        if cost_usd > limits.max_cost_usd:
+        if limits.max_cost_usd > 0.0 and cost_usd > limits.max_cost_usd:
             violations.append(f"Cost ${cost_usd} exceeds limit ${limits.max_cost_usd}")
 
         # Check memory
@@ -545,12 +545,24 @@ class PolicyEnforcer:
             result: Result of action
             metadata: Additional metadata
         """
+        from tab.models.audit_record import SecurityContext, ResultStatus
+
+        # Create security context for the record
+        security_context = SecurityContext(
+            policy_applied=metadata.get("policy_id", "unknown"),
+            permission_checks=[action],
+            risk_score=0.1 if result == "success" else 0.5,
+            threat_indicators=[] if result == "success" else ["policy_violation"]
+        )
+
         audit_record = AuditRecord(
             session_id=session_id,
             event_type=event_type,
             action=action,
-            result=result,
+            result=ResultStatus(result),
             reason=f"Policy enforcement: {action}",
+            policy_applied=metadata.get("policy_id", "unknown"),
+            security_context=security_context,
             metadata=metadata
         )
         self._audit_records.append(audit_record)

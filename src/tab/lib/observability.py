@@ -105,9 +105,10 @@ class TelemetryManager:
         )
 
         # Setup tracer provider
+        from opentelemetry.sdk.trace.sampling import TraceIdRatioBasedSampler
         tracer_provider = TracerProvider(
             resource=self._resource,
-            sampler=trace.TraceIdRatioBasedSampler(self.config.trace_sampling_ratio)
+            sampler=TraceIdRatioBasedSampler(self.config.trace_sampling_ratio)
         )
         tracer_provider.add_span_processor(span_processor)
 

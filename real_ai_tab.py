@@ -13,7 +13,7 @@ import signal
 import sys
 import time
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 import tempfile
 import os
 
@@ -29,7 +29,7 @@ from tab.models.agent_adapter import AgentAdapter, AgentStatus
 class RealAISession:
     """실제 AI 대화 세션 - Production-Ready with TAB Services"""
 
-    def __init__(self, session_id: str, topic: str, max_turns: int = 10, budget_usd: float = 1.0,
+    def __init__(self, session_id: str, topic: str, max_turns: int = 10,
                  approval_mode: str = "auto", policy_id: str = "default"):
         self.session_id = session_id
         self.topic = topic
@@ -39,10 +39,8 @@ class RealAISession:
         self.conversation_active = True
         self.user_intervention = False
 
-        # T027: Budget controls and turn limits
+        # T027: Turn limits (subscription-based billing)
         self.max_turns = max_turns
-        self.budget_usd = budget_usd
-        self.total_cost_usd = 0.0
         self.current_turn = 0
 
         # T029: Approval mode and permission boundaries
@@ -52,11 +50,29 @@ class RealAISession:
         self.pending_approvals = []  # Queue for approval requests
 
         # T025: Structured adapter integration
-        self.claude_adapter = ClaudeCodeAdapter()
-
-        # T026: Initialize CodexAdapter with proper configuration
         from tab.models.agent_adapter import ConnectionConfig, ExecutionLimits, AgentType
 
+        claude_config = AgentAdapter(
+            agent_id="claude_code_real_tab",
+            agent_type=AgentType.CLAUDE_CODE,
+            name="Claude Code for Real TAB",
+            version="1.0.0",
+            connection_config=ConnectionConfig(
+                type="cli",
+                endpoint="claude",
+                timeout_seconds=180,
+                retry_attempts=2
+            ),
+            execution_limits=ExecutionLimits(
+                max_execution_time_seconds=180,
+                max_cost_usd=0.0,  # Subscription-based service
+                max_memory_mb=512,
+                max_concurrent_requests=1
+            )
+        )
+        self.claude_adapter = ClaudeCodeAdapter(claude_config)
+
+        # T026: Initialize CodexAdapter with proper configuration
         codex_config = AgentAdapter(
             agent_id="codex_cli_real_tab",
             agent_type=AgentType.CODEX_CLI,
@@ -70,15 +86,20 @@ class RealAISession:
             ),
             execution_limits=ExecutionLimits(
                 max_execution_time_seconds=180,
-                max_cost_usd=budget_usd,
+                max_cost_usd=0.0,  # Subscription-based service
                 max_memory_mb=512,
                 max_concurrent_requests=1
             )
         )
         self.codex_adapter = CodexAdapter(codex_config)
 
-        # T028: OpenTelemetry integration
-        self.tracer = get_tracer(__name__)
+        # T028: OpenTelemetry integration (optional)
+        try:
+            self.tracer = get_tracer()
+        except (RuntimeError, Exception) as e:
+            # Telemetry is optional - continue without it
+            print(f"⚠️ OpenTelemetry 비활성화: {e}")
+            self.tracer = None
 
         # 각 에이전트의 대화 컨텍스트 관리
         self.claude_context = []
@@ -88,9 +109,10 @@ class RealAISession:
         turn_id = f"turn-{len(self.turns) + 1:03d}"
         metadata = metadata or {}
 
-        # T027: Budget tracking
+        # T027: Cost tracking (subscription-based, no additional charges)
         if "cost_usd" in metadata:
-            self.total_cost_usd += metadata["cost_usd"]
+            # Note: Using subscription plans, no additional cost tracking needed
+            pass
 
         turn = {
             "turn_id": turn_id,
@@ -111,14 +133,10 @@ class RealAISession:
             self.codex_context.append(f"나: {content}")
             self.claude_context.append(f"Codex CLI: {content}")
 
-    def check_budget_limits(self) -> bool:
-        """T027: Check if budget and turn limits are within bounds"""
+    def check_turn_limits(self) -> bool:
+        """T027: Check if turn limits are within bounds (subscription-based billing)"""
         if self.current_turn >= self.max_turns:
             print(f"⚠️ 턴 제한 도달: {self.current_turn}/{self.max_turns}")
-            return False
-
-        if self.total_cost_usd >= self.budget_usd:
-            print(f"⚠️ 예산 제한 도달: ${self.total_cost_usd:.4f}/${self.budget_usd}")
             return False
 
         return True
@@ -293,10 +311,9 @@ class RealAITAB:
         policy_ids = {"1": "default", "2": "read_only_strict", "3": "development_safe", "": "default"}
         policy_id = policy_ids.get(policy_choice, "default")
 
-        # Budget and turn limits
-        print(f"\n💰 예산 및 제한 설정:")
-        budget_input = input("최대 예산 (USD, 기본값: 1.0): ").strip()
-        budget_usd = float(budget_input) if budget_input else 1.0
+        # Turn limits (subscription-based CLI tools don't need budget)
+        print(f"\n🔄 대화 제한 설정:")
+        print(f"   💡 Claude Code와 Codex CLI는 구독 플랜을 사용하므로 별도 예산 설정이 불필요합니다.")
 
         turns_input = input("최대 턴 수 (기본값: 10): ").strip()
         max_turns = int(turns_input) if turns_input else 10
@@ -306,13 +323,13 @@ class RealAITAB:
         print(f"   🤖 참여 에이전트: Claude Code, Codex CLI")
         print(f"   🔒 승인 모드: {approval_mode}")
         print(f"   🛡️  보안 정책: {policy_id}")
-        print(f"   💰 예산: ${budget_usd}")
         print(f"   🔄 최대 턴: {max_turns}")
+        print(f"   💡 비용: 구독 플랜 기반 (별도 과금 없음)")
         print(f"   🛑 중단: Ctrl+C로 언제든 개입 가능")
 
         # 세션 생성
         session_id = f"real-ai-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-        self.session = RealAISession(session_id, topic, max_turns, budget_usd, approval_mode, policy_id)
+        self.session = RealAISession(session_id, topic, max_turns, approval_mode, policy_id)
 
         return session_id
 
@@ -452,7 +469,7 @@ class RealAITAB:
                 "prompt_length": len(prompt),
                 "context_length": len(context),
                 "session_turn": self.session.current_turn,
-                "budget_remaining": self.session.budget_usd - self.session.total_cost_usd
+                "billing_model": "subscription_based"
             }
 
             approved = await self.session.request_approval("Codex CLI 에이전트 호출", approval_details)
@@ -486,7 +503,7 @@ class RealAITAB:
             # Prepare constraints
             constraints = {
                 "max_execution_time_ms": 180000,  # 3 minutes
-                "max_cost_usd": min(0.1, self.session.budget_usd - self.session.total_cost_usd),
+                "max_cost_usd": 0.0,  # Subscription-based service
                 "permission_mode": "auto",  # For autonomous conversation
                 "allowed_tools": [],  # Let Codex decide
                 "disallowed_tools": []
@@ -619,7 +636,7 @@ class RealAITAB:
             return
 
         print(f"\n🔄 실제 AI 대화를 시작합니다...")
-        print(f"📝 주제: {self.topic}")
+        print(f"📝 주제: {self.session.topic}")
         print(f"=" * 80)
 
         # 첫 번째 에이전트로 Claude Code 시작
@@ -712,7 +729,7 @@ class RealAITAB:
 
                 elif choice == 's':
                     print(f"\n📊 현재 세션 상태:")
-                    print(f"   📝 주제: {self.topic}")
+                    print(f"   📝 주제: {self.session.topic}")
                     print(f"   🔄 턴 수: {len(self.session.turns)}")
                     print(f"   ⏰ 경과 시간: {datetime.now() - self.session.created_at}")
 
@@ -782,7 +799,7 @@ class RealAITAB:
 
         # 전체 대화 내용 수집
         conversation_text = []
-        conversation_text.append(f"주제: {self.topic}")
+        conversation_text.append(f"주제: {self.session.topic}")
         conversation_text.append(f"세션 ID: {self.session.session_id}")
         conversation_text.append(f"시작 시간: {self.session.created_at}")
         conversation_text.append(f"총 턴 수: {len(self.session.turns)}")
@@ -878,7 +895,7 @@ class RealAITAB:
                                for turn in self.session.turns)
 
             print(f"📊 대화 통계:")
-            print(f"   📝 주제: {self.topic}")
+            print(f"   📝 주제: {self.session.topic}")
             print(f"   🔄 총 턴 수: {len(self.session.turns)}")
             print(f"   ✅ 성공한 턴: {successful_turns}")
             print(f"   ⏱️  총 AI 응답 시간: {total_duration:.1f}초")
