@@ -1,16 +1,20 @@
 FROM python:3.11-slim-bullseye
 
+# T033: Enhanced security hardening for agent sandbox
 # Install minimal system dependencies for agent execution
 RUN apt-get update && apt-get install -y \
     curl \
     git \
     vim \
     nano \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean \
+    && rm -rf /tmp/* /var/tmp/*
 
-# Create sandbox user with minimal privileges
+# T033: Create sandbox user with minimal privileges and security hardening
 RUN groupadd --gid 1000 sandbox && \
-    useradd --uid 1000 --gid sandbox --shell /bin/bash --create-home sandbox
+    useradd --uid 1000 --gid sandbox --shell /bin/bash --create-home sandbox \
+    --no-log-init
 
 # Install common Python packages for agent work
 RUN pip install --no-cache-dir \
@@ -20,16 +24,31 @@ RUN pip install --no-cache-dir \
     click \
     rich
 
-# Set up workspace
+# T033: Set up secure workspace with proper permissions
 WORKDIR /workspace
-RUN chown -R sandbox:sandbox /workspace
+RUN chown -R sandbox:sandbox /workspace \
+    && chmod 750 /workspace
 
-# Security: Switch to sandbox user
+# T033: Create restricted directories
+RUN mkdir -p /home/sandbox/.cache /home/sandbox/.local \
+    && chown -R sandbox:sandbox /home/sandbox \
+    && chmod 700 /home/sandbox/.cache /home/sandbox/.local
+
+# T033: Security: Switch to sandbox user early
 USER sandbox
 
-# Set environment variables
+# T033: Secure environment variables
 ENV PYTHONPATH=/workspace
 ENV HOME=/home/sandbox
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PYTHON_HISTORY_FILE=/dev/null
+ENV PATH=/home/sandbox/.local/bin:$PATH
 
-# Default command (overridden by orchestrator)
-CMD ["bash"]
+# T033: Security hardening - disable core dumps and limit resources
+RUN echo "ulimit -c 0" >> /home/sandbox/.bashrc \
+    && echo "ulimit -u 256" >> /home/sandbox/.bashrc \
+    && echo "ulimit -n 1024" >> /home/sandbox/.bashrc
+
+# T033: Default command (overridden by orchestrator)
+CMD ["bash", "-l"]

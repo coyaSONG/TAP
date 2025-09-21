@@ -54,17 +54,17 @@ Single project structure: `src/tab/`, `tests/` at repository root per plan.md
 ## Phase 3.5: Real AI Tab Upgrade (Core User Requirement)
 
 - [x] T025 Replace real_ai_tab.py stdout parsing with structured ClaudeCodeAdapter integration
-- [ ] T026 Add real_ai_tab.py session log parsing using CodexAdapter JSONL methods
+- [x] T026 Add real_ai_tab.py session log parsing using CodexAdapter JSONL methods
 - [x] T027 Implement real_ai_tab.py budget controls and max_turns constraints using ConversationOrchestrator
 - [x] T028 Integrate real_ai_tab.py with OpenTelemetry spans for conversation.turn and agent.call operations
-- [ ] T029 Add real_ai_tab.py approval mode and permission boundaries using PolicyEnforcer
+- [x] T029 Add real_ai_tab.py approval mode and permission boundaries using PolicyEnforcer
 
 ## Phase 3.6: Observability and Security Integration
 
-- [ ] T030 [P] Enhance observability.py with conversation-specific spans and metrics in src/tab/lib/observability.py
-- [ ] T031 [P] Implement security audit logging with cryptographic integrity in src/tab/lib/logging_config.py
-- [ ] T032 [P] Add circuit breaker patterns and retry logic in src/tab/lib/metrics.py
-- [ ] T033 Configure Docker rootless containers with capability dropping per security requirements
+- [x] T030 [P] Enhance observability.py with conversation-specific spans and metrics in src/tab/lib/observability.py
+- [x] T031 [P] Implement security audit logging with cryptographic integrity in src/tab/lib/logging_config.py
+- [x] T032 [P] Add circuit breaker patterns and retry logic in src/tab/lib/metrics.py
+- [x] T033 Configure Docker rootless containers with capability dropping per security requirements
 
 ## Phase 3.7: CLI and API Integration
 

@@ -7,6 +7,7 @@ conversation orchestration and agent interactions.
 
 import logging
 import os
+from datetime import datetime
 from typing import Dict, Any, Optional
 
 from opentelemetry import trace, metrics
@@ -246,5 +247,195 @@ def create_agent_span(agent_id: str, operation: str, session_id: Optional[str] =
     span = tracer.start_span(
         name=f"agent.{operation}",
         attributes=attributes
+    )
+    return span
+
+
+# T030: Enhanced conversation-specific spans and metrics
+class ConversationMetrics:
+    """Metrics collector for conversation-level observability."""
+
+    def __init__(self):
+        self.meter = get_meter()
+
+        # Conversation metrics
+        self.conversation_duration = self.meter.create_histogram(
+            name="tab_conversation_duration_seconds",
+            description="Duration of conversation sessions",
+            unit="s"
+        )
+
+        self.conversation_turns = self.meter.create_histogram(
+            name="tab_conversation_turns_total",
+            description="Number of turns in conversation sessions",
+            unit="1"
+        )
+
+        self.conversation_cost = self.meter.create_histogram(
+            name="tab_conversation_cost_usd",
+            description="Cost of conversation sessions in USD",
+            unit="usd"
+        )
+
+        # Agent interaction metrics
+        self.agent_response_time = self.meter.create_histogram(
+            name="tab_agent_response_time_seconds",
+            description="Response time for agent calls",
+            unit="s"
+        )
+
+        self.agent_success_rate = self.meter.create_counter(
+            name="tab_agent_calls_total",
+            description="Total agent calls with success/failure status",
+            unit="1"
+        )
+
+        # Policy enforcement metrics
+        self.policy_violations = self.meter.create_counter(
+            name="tab_policy_violations_total",
+            description="Total policy violations by type",
+            unit="1"
+        )
+
+        self.approval_requests = self.meter.create_counter(
+            name="tab_approval_requests_total",
+            description="Total approval requests by result",
+            unit="1"
+        )
+
+    def record_conversation_completed(self, session_id: str, duration_seconds: float,
+                                    turn_count: int, total_cost: float,
+                                    policy_id: str, success: bool):
+        """Record metrics for completed conversation."""
+        labels = {
+            "session_id": session_id,
+            "policy_id": policy_id,
+            "success": str(success).lower()
+        }
+
+        self.conversation_duration.record(duration_seconds, labels)
+        self.conversation_turns.record(turn_count, labels)
+        self.conversation_cost.record(total_cost, labels)
+
+    def record_agent_call(self, agent_id: str, operation: str, duration_seconds: float,
+                         success: bool, session_id: Optional[str] = None):
+        """Record metrics for agent calls."""
+        labels = {
+            "agent_id": agent_id,
+            "operation": operation,
+            "success": str(success).lower()
+        }
+
+        if session_id:
+            labels["session_id"] = session_id
+
+        self.agent_response_time.record(duration_seconds, labels)
+        self.agent_success_rate.add(1, labels)
+
+    def record_policy_violation(self, policy_id: str, violation_type: str,
+                               agent_id: str, session_id: Optional[str] = None):
+        """Record policy violation metrics."""
+        labels = {
+            "policy_id": policy_id,
+            "violation_type": violation_type,
+            "agent_id": agent_id
+        }
+
+        if session_id:
+            labels["session_id"] = session_id
+
+        self.policy_violations.add(1, labels)
+
+    def record_approval_request(self, action: str, result: str,
+                               session_id: Optional[str] = None):
+        """Record approval request metrics."""
+        labels = {
+            "action": action,
+            "result": result  # approved, denied, timeout
+        }
+
+        if session_id:
+            labels["session_id"] = session_id
+
+        self.approval_requests.add(1, labels)
+
+
+# Global metrics collector instance
+_conversation_metrics: Optional[ConversationMetrics] = None
+
+
+def get_conversation_metrics() -> ConversationMetrics:
+    """Get global conversation metrics collector."""
+    global _conversation_metrics
+    if _conversation_metrics is None:
+        _conversation_metrics = ConversationMetrics()
+    return _conversation_metrics
+
+
+def create_turn_span(session_id: str, turn_number: int, from_agent: str,
+                    to_agent: str) -> trace.Span:
+    """Create a span for a conversation turn with detailed attributes."""
+    tracer = get_tracer()
+    span = tracer.start_span(
+        name="conversation.turn",
+        attributes={
+            "conversation.session_id": session_id,
+            "conversation.turn_number": turn_number,
+            "conversation.from_agent": from_agent,
+            "conversation.to_agent": to_agent,
+            "conversation.direction": f"{from_agent}->{to_agent}"
+        }
+    )
+    return span
+
+
+def create_policy_enforcement_span(policy_id: str, operation: str,
+                                  session_id: Optional[str] = None) -> trace.Span:
+    """Create a span for policy enforcement operations."""
+    tracer = get_tracer()
+    attributes = {
+        "policy.id": policy_id,
+        "policy.operation": operation
+    }
+
+    if session_id:
+        attributes["conversation.session_id"] = session_id
+
+    span = tracer.start_span(
+        name=f"policy.{operation}",
+        attributes=attributes
+    )
+    return span
+
+
+def create_approval_span(action: str, session_id: Optional[str] = None) -> trace.Span:
+    """Create a span for approval workflow operations."""
+    tracer = get_tracer()
+    attributes = {
+        "approval.action": action
+    }
+
+    if session_id:
+        attributes["conversation.session_id"] = session_id
+
+    span = tracer.start_span(
+        name="approval.request",
+        attributes=attributes
+    )
+    return span
+
+
+def instrument_conversation_flow(session_id: str, topic: str,
+                                policy_id: str) -> trace.Span:
+    """Create a root span for the entire conversation flow."""
+    tracer = get_tracer()
+    span = tracer.start_span(
+        name="conversation.flow",
+        attributes={
+            "conversation.session_id": session_id,
+            "conversation.topic": topic,
+            "conversation.policy_id": policy_id,
+            "conversation.timestamp": str(datetime.now())
+        }
     )
     return span

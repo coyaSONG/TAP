@@ -349,6 +349,291 @@ def time_agent_operation(agent_id: str, operation: str):
         yield timer
 
 
+# T032: Circuit breaker patterns and retry logic
+import asyncio
+import random
+from datetime import datetime, timedelta
+from dataclasses import dataclass, field
+from typing import Callable, Any, Union, Awaitable
+
+
+class CircuitState(Enum):
+    """Circuit breaker states."""
+    CLOSED = "closed"      # Normal operation
+    OPEN = "open"          # Failing, blocking requests
+    HALF_OPEN = "half_open"  # Testing if service is recovered
+
+
+@dataclass
+class CircuitBreakerConfig:
+    """Configuration for circuit breaker behavior."""
+    failure_threshold: int = 5  # Number of failures to open circuit
+    reset_timeout: int = 60    # Seconds to wait before trying half-open
+    success_threshold: int = 3  # Successes needed to close from half-open
+    timeout_seconds: float = 30.0  # Request timeout
+
+
+@dataclass
+class CircuitBreakerMetrics:
+    """Metrics tracked by circuit breaker."""
+    total_requests: int = 0
+    total_failures: int = 0
+    consecutive_failures: int = 0
+    consecutive_successes: int = 0
+    last_failure_time: Optional[datetime] = None
+    state_transitions: List[str] = field(default_factory=list)
+
+
+class CircuitBreakerError(Exception):
+    """Raised when circuit breaker is open."""
+    pass
+
+
+class CircuitBreaker:
+    """Circuit breaker implementation with metrics integration."""
+
+    def __init__(self, name: str, config: CircuitBreakerConfig, metrics_collector: Optional[MetricsCollector] = None):
+        self.name = name
+        self.config = config
+        self.state = CircuitState.CLOSED
+        self.metrics = CircuitBreakerMetrics()
+        self.metrics_collector = metrics_collector
+        self._lock = asyncio.Lock()
+
+        # Setup metrics instruments if collector provided
+        if self.metrics_collector:
+            self._setup_circuit_breaker_metrics()
+
+    def _setup_circuit_breaker_metrics(self):
+        """Setup OpenTelemetry metrics for circuit breaker."""
+        meter = self.metrics_collector.meter
+
+        self.circuit_state_gauge = meter.create_gauge(
+            name="tab_circuit_breaker_state",
+            description="Current state of circuit breaker (0=closed, 1=half_open, 2=open)",
+            unit="1"
+        )
+
+        self.circuit_requests = meter.create_counter(
+            name="tab_circuit_breaker_requests_total",
+            description="Total requests through circuit breaker",
+            unit="1"
+        )
+
+        self.circuit_failures = meter.create_counter(
+            name="tab_circuit_breaker_failures_total",
+            description="Total failures in circuit breaker",
+            unit="1"
+        )
+
+    def _record_state_change(self, old_state: CircuitState, new_state: CircuitState):
+        """Record state change in metrics."""
+        self.metrics.state_transitions.append(f"{old_state.value}->{new_state.value}")
+
+        if self.metrics_collector:
+            state_value = {"closed": 0, "half_open": 1, "open": 2}[new_state.value]
+            self.circuit_state_gauge.set(state_value, {"circuit_name": self.name})
+
+    def _should_attempt_reset(self) -> bool:
+        """Check if circuit should attempt reset from open state."""
+        if self.state != CircuitState.OPEN:
+            return False
+
+        if self.metrics.last_failure_time is None:
+            return True
+
+        time_since_failure = datetime.now() - self.metrics.last_failure_time
+        return time_since_failure.total_seconds() >= self.config.reset_timeout
+
+    async def _call_with_timeout(self, func: Callable, *args, **kwargs) -> Any:
+        """Execute function with timeout."""
+        if asyncio.iscoroutinefunction(func):
+            return await asyncio.wait_for(func(*args, **kwargs), timeout=self.config.timeout_seconds)
+        else:
+            # For sync functions, run in executor with timeout
+            loop = asyncio.get_event_loop()
+            return await asyncio.wait_for(
+                loop.run_in_executor(None, func, *args, **kwargs),
+                timeout=self.config.timeout_seconds
+            )
+
+    async def call(self, func: Callable, *args, **kwargs) -> Any:
+        """Execute function through circuit breaker."""
+        async with self._lock:
+            # Record request
+            self.metrics.total_requests += 1
+            if self.metrics_collector:
+                self.circuit_requests.add(1, {"circuit_name": self.name, "state": self.state.value})
+
+            # Check if we should attempt reset
+            if self.state == CircuitState.OPEN and self._should_attempt_reset():
+                old_state = self.state
+                self.state = CircuitState.HALF_OPEN
+                self._record_state_change(old_state, self.state)
+
+            # Block requests if circuit is open
+            if self.state == CircuitState.OPEN:
+                raise CircuitBreakerError(f"Circuit breaker '{self.name}' is open")
+
+        try:
+            # Execute the function
+            result = await self._call_with_timeout(func, *args, **kwargs)
+
+            # Record success
+            async with self._lock:
+                self.metrics.consecutive_failures = 0
+                self.metrics.consecutive_successes += 1
+
+                # Transition from half-open to closed if enough successes
+                if (self.state == CircuitState.HALF_OPEN and
+                    self.metrics.consecutive_successes >= self.config.success_threshold):
+                    old_state = self.state
+                    self.state = CircuitState.CLOSED
+                    self._record_state_change(old_state, self.state)
+
+            return result
+
+        except Exception as e:
+            # Record failure
+            async with self._lock:
+                self.metrics.total_failures += 1
+                self.metrics.consecutive_failures += 1
+                self.metrics.consecutive_successes = 0
+                self.metrics.last_failure_time = datetime.now()
+
+                if self.metrics_collector:
+                    self.circuit_failures.add(1, {
+                        "circuit_name": self.name,
+                        "error_type": type(e).__name__
+                    })
+
+                # Open circuit if too many failures
+                if (self.state == CircuitState.CLOSED and
+                    self.metrics.consecutive_failures >= self.config.failure_threshold):
+                    old_state = self.state
+                    self.state = CircuitState.OPEN
+                    self._record_state_change(old_state, self.state)
+
+                # Return to open from half-open on any failure
+                elif self.state == CircuitState.HALF_OPEN:
+                    old_state = self.state
+                    self.state = CircuitState.OPEN
+                    self._record_state_change(old_state, self.state)
+
+            raise
+
+
+@dataclass
+class RetryConfig:
+    """Configuration for retry behavior."""
+    max_attempts: int = 3
+    base_delay: float = 1.0      # Base delay in seconds
+    max_delay: float = 60.0      # Maximum delay in seconds
+    exponential_base: float = 2.0  # Exponential backoff base
+    jitter: bool = True          # Add random jitter to delays
+
+
+class RetryError(Exception):
+    """Raised when all retry attempts are exhausted."""
+    def __init__(self, attempts: int, last_exception: Exception):
+        self.attempts = attempts
+        self.last_exception = last_exception
+        super().__init__(f"Failed after {attempts} attempts. Last error: {last_exception}")
+
+
+class RetryHandler:
+    """Retry handler with exponential backoff and jitter."""
+
+    def __init__(self, config: RetryConfig, metrics_collector: Optional[MetricsCollector] = None):
+        self.config = config
+        self.metrics_collector = metrics_collector
+
+        if self.metrics_collector:
+            self._setup_retry_metrics()
+
+    def _setup_retry_metrics(self):
+        """Setup OpenTelemetry metrics for retry handler."""
+        meter = self.metrics_collector.meter
+
+        self.retry_attempts = meter.create_counter(
+            name="tab_retry_attempts_total",
+            description="Total retry attempts by operation",
+            unit="1"
+        )
+
+        self.retry_exhausted = meter.create_counter(
+            name="tab_retry_exhausted_total",
+            description="Operations that exhausted all retries",
+            unit="1"
+        )
+
+    def _calculate_delay(self, attempt: int) -> float:
+        """Calculate delay for given attempt number."""
+        delay = self.config.base_delay * (self.config.exponential_base ** (attempt - 1))
+        delay = min(delay, self.config.max_delay)
+
+        if self.config.jitter:
+            # Add ±25% jitter
+            jitter_range = delay * 0.25
+            delay += random.uniform(-jitter_range, jitter_range)
+
+        return max(0, delay)
+
+    async def call(self, func: Callable, *args, operation_name: str = "unknown", **kwargs) -> Any:
+        """Execute function with retry logic."""
+        last_exception = None
+
+        for attempt in range(1, self.config.max_attempts + 1):
+            try:
+                if self.metrics_collector:
+                    self.retry_attempts.add(1, {
+                        "operation": operation_name,
+                        "attempt": str(attempt)
+                    })
+
+                if asyncio.iscoroutinefunction(func):
+                    return await func(*args, **kwargs)
+                else:
+                    return func(*args, **kwargs)
+
+            except Exception as e:
+                last_exception = e
+
+                # Don't retry on final attempt
+                if attempt == self.config.max_attempts:
+                    break
+
+                # Calculate delay for next attempt
+                delay = self._calculate_delay(attempt)
+                await asyncio.sleep(delay)
+
+        # All attempts exhausted
+        if self.metrics_collector:
+            self.retry_exhausted.add(1, {"operation": operation_name})
+
+        raise RetryError(self.config.max_attempts, last_exception)
+
+
+class ResilientCallManager:
+    """Combines circuit breaker and retry logic for resilient service calls."""
+
+    def __init__(
+        self,
+        circuit_config: CircuitBreakerConfig,
+        retry_config: RetryConfig,
+        metrics_collector: Optional[MetricsCollector] = None
+    ):
+        self.circuit_breaker = CircuitBreaker("resilient_call", circuit_config, metrics_collector)
+        self.retry_handler = RetryHandler(retry_config, metrics_collector)
+
+    async def call(self, func: Callable, *args, operation_name: str = "unknown", **kwargs) -> Any:
+        """Execute function with both circuit breaker and retry protection."""
+        return await self.retry_handler.call(
+            lambda: self.circuit_breaker.call(func, *args, **kwargs),
+            operation_name=operation_name
+        )
+
+
 def record_conversation_metrics(metrics: ConversationMetrics) -> None:
     """Record conversation completion metrics."""
     collector = get_metrics_collector()
