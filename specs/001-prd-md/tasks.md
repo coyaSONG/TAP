@@ -68,17 +68,17 @@ Single project structure: `src/tab/`, `tests/` at repository root per plan.md
 
 ## Phase 3.7: CLI and API Integration
 
-- [ ] T034 Enhance CLI main.py with conversation management commands and FastAPI integration
-- [ ] T035 Add CLI command for starting conversations with agent selection and policy enforcement
-- [ ] T036 Implement CLI status and monitoring commands for session management
-- [ ] T037 Add CLI configuration management for policies and agent settings
+- [x] T034 Enhance CLI main.py with conversation management commands and FastAPI integration
+- [x] T035 Add CLI command for starting conversations with agent selection and policy enforcement
+- [x] T036 Implement CLI status and monitoring commands for session management
+- [x] T037 Add CLI configuration management for policies and agent settings
 
 ## Phase 3.8: Polish and Production Readiness
 
-- [ ] T038 [P] Unit tests for policy validation logic in tests/unit/test_policy_validation.py
-- [ ] T039 [P] Unit tests for message parsing and routing in tests/unit/test_message_processing.py
-- [ ] T040 [P] Unit tests for session state management in tests/unit/test_session_management.py
-- [ ] T041 Performance validation for <200ms turn latency requirements per quickstart scenarios
+- [x] T038 [P] Unit tests for policy validation logic in tests/unit/test_policy_validation.py
+- [x] T039 [P] Unit tests for message parsing and routing in tests/unit/test_message_processing.py
+- [x] T040 [P] Unit tests for session state management in tests/unit/test_session_management.py
+- [x] T041 Performance validation for <200ms turn latency requirements per quickstart scenarios
 - [ ] T042 [P] Security penetration testing for permission boundary bypass attempts
 - [ ] T043 [P] End-to-end quickstart scenario validation with all 4 test cases
 - [ ] T044 [P] Documentation updates for production deployment and monitoring setup
