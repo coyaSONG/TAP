@@ -5,7 +5,7 @@ from enum import Enum
 from typing import List, Optional, Dict, Any, Union
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class EventType(str, Enum):
@@ -101,14 +101,14 @@ class AuditRecord(BaseModel):
             datetime: lambda v: v.isoformat(),
         }
 
-    @validator('record_id')
+    @field_validator('record_id')
     def validate_record_id(cls, v):
         """Validate record ID is not empty."""
         if not v.strip():
             raise ValueError("record_id cannot be empty")
         return v.strip()
 
-    @validator('timestamp')
+    @field_validator('timestamp')
     def validate_timestamp_not_future(cls, v):
         """Ensure timestamp is not in the future."""
         now = datetime.now(timezone.utc)
@@ -116,21 +116,21 @@ class AuditRecord(BaseModel):
             raise ValueError("timestamp cannot be in the future")
         return v
 
-    @validator('action')
+    @field_validator('action')
     def validate_action(cls, v):
         """Validate action is not empty."""
         if not v.strip():
             raise ValueError("action cannot be empty")
         return v.strip()
 
-    @validator('policy_applied')
+    @field_validator('policy_applied')
     def validate_policy_applied(cls, v):
         """Validate policy_applied is not empty."""
         if not v.strip():
             raise ValueError("policy_applied cannot be empty")
         return v.strip()
 
-    @validator('request_data', 'response_data')
+    @field_validator('request_data', 'response_data')
     def sanitize_sensitive_data(cls, v):
         """Sanitize sensitive data from request/response."""
         if not isinstance(v, dict):

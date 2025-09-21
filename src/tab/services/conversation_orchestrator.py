@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from tab.models.conversation_session import ConversationSession, SessionStatus
 from tab.models.turn_message import TurnMessage, MessageRole
-from tab.models.orchestration_state import OrchestrationState, FlowState
+from tab.models.orchestration_state import OrchestrationState, ConversationFlow
 from tab.models.agent_adapter import AgentAdapter, AgentStatus
 from tab.services.base_agent_adapter import BaseAgentAdapter, AgentResponse
 from tab.services.claude_code_adapter import ClaudeCodeAdapter
@@ -124,7 +124,7 @@ class ConversationOrchestrator:
             orchestration_state = OrchestrationState(
                 session_id=session.session_id,
                 active_agent=participants[0],  # Start with first participant
-                conversation_flow=FlowState.WAITING,
+                conversation_flow=ConversationFlow.WAITING,
                 cost_budget_remaining=budget_usd,
                 turn_budget_remaining=max_turns
             )
@@ -218,7 +218,7 @@ class ConversationOrchestrator:
             session.add_turn_message(user_message)
             orchestration_state.current_turn += 1
             orchestration_state.active_agent = to_agent
-            orchestration_state.conversation_flow = FlowState.PROCESSING
+            orchestration_state.conversation_flow = ConversationFlow.PROCESSING
 
             # Process with agent
             agent_response = await self._process_with_agent(
@@ -259,12 +259,12 @@ class ConversationOrchestrator:
             # Update orchestration state
             orchestration_state.cost_budget_remaining -= agent_response.cost_usd or 0.0
             orchestration_state.turn_budget_remaining -= 1
-            orchestration_state.conversation_flow = FlowState.WAITING
+            orchestration_state.conversation_flow = ConversationFlow.WAITING
 
             # Check convergence
             convergence_detected = self._check_convergence(session, agent_response)
             if convergence_detected:
-                orchestration_state.conversation_flow = FlowState.CONVERGING
+                orchestration_state.conversation_flow = ConversationFlow.CONVERGING
 
             # Update session status if needed
             self._update_session_status(session, orchestration_state)
@@ -285,7 +285,7 @@ class ConversationOrchestrator:
 
             # Mark session as failed
             session.transition_to(SessionStatus.FAILED, str(e))
-            orchestration_state.conversation_flow = FlowState.FAILED
+            orchestration_state.conversation_flow = ConversationFlow.FAILED
 
             return {
                 "turn_id": str(uuid4()),
@@ -476,16 +476,16 @@ class ConversationOrchestrator:
             orchestration_state: Current orchestration state
         """
         # Check for completion conditions
-        if orchestration_state.conversation_flow == FlowState.CONVERGING:
+        if orchestration_state.conversation_flow == ConversationFlow.CONVERGING:
             if session.should_auto_complete():
                 session.transition_to(SessionStatus.COMPLETED, "Conversation converged")
-                orchestration_state.conversation_flow = FlowState.COMPLETED
+                orchestration_state.conversation_flow = ConversationFlow.COMPLETED
 
         # Check for budget/turn limits
         elif (orchestration_state.cost_budget_remaining <= 0 or
               orchestration_state.turn_budget_remaining <= 0):
             session.transition_to(SessionStatus.TIMEOUT, "Budget/turn limit exceeded")
-            orchestration_state.conversation_flow = FlowState.TIMEOUT
+            orchestration_state.conversation_flow = ConversationFlow.TIMEOUT
 
     async def list_agents(self, include_capabilities: bool = False) -> Dict[str, Any]:
         """List available agents and their current status.

@@ -4,7 +4,7 @@ import logging
 from typing import Dict, Any, List, Optional, Set
 from datetime import datetime, timezone
 
-from tab.models.policy_configuration import PolicyConfiguration, PermissionMode, ResourceLimit
+from tab.models.policy_configuration import PolicyConfiguration, PermissionMode, ResourceLimits
 from tab.models.audit_record import AuditRecord, EventType
 from tab.models.turn_message import TurnMessage
 
@@ -32,7 +32,7 @@ class PolicyEnforcer:
             allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
             disallowed_tools=[],
             permission_mode=PermissionMode.PROMPT,
-            resource_limits=ResourceLimit(
+            resource_limits=ResourceLimits(
                 max_execution_time_seconds=120,
                 max_cost_usd=1.0,
                 max_memory_mb=512,
@@ -58,7 +58,7 @@ class PolicyEnforcer:
             allowed_tools=["Read", "Grep", "Glob"],
             disallowed_tools=["Write", "Edit", "Bash", "MultiEdit"],
             permission_mode=PermissionMode.DENY,
-            resource_limits=ResourceLimit(
+            resource_limits=ResourceLimits(
                 max_execution_time_seconds=60,
                 max_cost_usd=0.1,
                 max_memory_mb=256,
@@ -84,7 +84,7 @@ class PolicyEnforcer:
             allowed_tools=["Read", "Write", "Edit", "Grep", "Glob", "MultiEdit"],
             disallowed_tools=["Bash"],
             permission_mode=PermissionMode.AUTO,
-            resource_limits=ResourceLimit(
+            resource_limits=ResourceLimits(
                 max_execution_time_seconds=180,
                 max_cost_usd=0.5,
                 max_memory_mb=1024,

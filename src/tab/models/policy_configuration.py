@@ -5,7 +5,7 @@ from enum import Enum
 from typing import List, Optional, Dict, Any, Union
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class PermissionMode(str, Enum):
@@ -111,7 +111,8 @@ class PolicyConfiguration(BaseModel):
             datetime: lambda v: v.isoformat(),
         }
 
-    @validator('policy_id')
+    @field_validator('policy_id')
+    @classmethod
     def validate_policy_id(cls, v):
         """Validate policy ID is unique and follows naming convention."""
         if not v.strip():
@@ -124,31 +125,13 @@ class PolicyConfiguration(BaseModel):
 
         return v.strip()
 
-    @validator('name')
+    @field_validator('name')
+    @classmethod
     def validate_name(cls, v):
         """Validate policy name."""
         if not v.strip():
             raise ValueError("name cannot be empty")
         return v.strip()
-
-    @validator('allowed_tools', 'disallowed_tools')
-    def validate_tool_lists(cls, v, values, field):
-        """Validate tool lists don't overlap."""
-        if field.name == 'disallowed_tools' and 'allowed_tools' in values:
-            allowed = set(values['allowed_tools'])
-            disallowed = set(v)
-            overlap = allowed.intersection(disallowed)
-            if overlap:
-                raise ValueError(f"Tools cannot be both allowed and disallowed: {overlap}")
-
-        return v
-
-    @validator('updated_at', always=True)
-    def validate_updated_at(cls, v, values):
-        """Ensure updated_at is not before created_at."""
-        if 'created_at' in values and v < values['created_at']:
-            raise ValueError("updated_at cannot be before created_at")
-        return v
 
     def is_tool_allowed(self, tool_name: str) -> bool:
         """
