@@ -15,12 +15,35 @@ logger = logging.getLogger(__name__)
 class PolicyEnforcer:
     """Service for enforcing security policies and permission controls."""
 
-    def __init__(self):
-        """Initialize the policy enforcer."""
+    def __init__(self, config: Dict[str, Any]):
+        """Initialize the policy enforcer with dependency injection.
+
+        Args:
+            config: Policy configuration dictionary
+        """
         self.logger = logging.getLogger(__name__)
         self._policies: Dict[str, PolicyConfiguration] = {}
         self._audit_records: List[AuditRecord] = []
-        self._load_default_policies()
+        self._config = config
+        self._load_policies_from_config()
+
+    def _load_policies_from_config(self) -> None:
+        """Load policy configurations from the injected config."""
+        # Load policies from config, with fallback to defaults
+        for policy_id, policy_data in self._config.items():
+            try:
+                if isinstance(policy_data, dict):
+                    # Convert dict to PolicyConfiguration
+                    policy = PolicyConfiguration(**policy_data)
+                    self._policies[policy_id] = policy
+                else:
+                    self.logger.warning(f"Invalid policy configuration for {policy_id}")
+            except Exception as e:
+                self.logger.error(f"Failed to load policy {policy_id}: {e}")
+
+        # Load defaults if no policies were configured
+        if not self._policies:
+            self._load_default_policies()
 
     def _load_default_policies(self) -> None:
         """Load default policy configurations."""
@@ -526,6 +549,108 @@ class PolicyEnforcer:
             "allowed": True,
             "violations": [],
             "action_required": "none"
+        }
+
+    def validate_session_creation(
+        self,
+        policy_id: str,
+        session_params: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Validate session creation parameters against policy.
+
+        Args:
+            policy_id: Policy to enforce
+            session_params: Session creation parameters
+
+        Returns:
+            Validation result with allowed status and details
+        """
+        policy = self.get_policy(policy_id)
+        if not policy:
+            return {
+                "allowed": False,
+                "violations": [f"Policy {policy_id} not found"],
+                "warnings": [],
+                "policy_id": policy_id,
+                "validation_time": datetime.now(timezone.utc).isoformat()
+            }
+
+        violations = []
+        warnings = []
+
+        # Validate basic session parameters
+        max_turns = session_params.get("max_turns", 8)
+        budget_usd = session_params.get("budget_usd", 1.0)
+
+        # Check resource limits
+        if budget_usd > policy.resource_limits.max_cost_usd:
+            violations.append(f"Session budget ${budget_usd} exceeds policy limit ${policy.resource_limits.max_cost_usd}")
+
+        # Check turn limits
+        if max_turns > 20:  # Reasonable upper bound
+            violations.append(f"Session max_turns {max_turns} exceeds reasonable limit")
+
+        # Check participants
+        participants = session_params.get("participants", [])
+        if len(participants) < 2:
+            violations.append("Session must have at least 2 participants")
+
+        return {
+            "allowed": len(violations) == 0,
+            "violations": violations,
+            "warnings": warnings,
+            "policy_id": policy_id,
+            "validation_time": datetime.now(timezone.utc).isoformat()
+        }
+
+    def validate_turn_addition(
+        self,
+        policy_id: str,
+        session: 'ConversationSession',
+        turn: 'TurnMessage'
+    ) -> Dict[str, Any]:
+        """Validate turn addition against policy constraints.
+
+        Args:
+            policy_id: Policy to enforce
+            session: Current session state
+            turn: Turn message to validate
+
+        Returns:
+            Validation result with allowed status and details
+        """
+        policy = self.get_policy(policy_id)
+        if not policy:
+            return {
+                "allowed": False,
+                "violations": [f"Policy {policy_id} not found"],
+                "warnings": [],
+                "policy_id": policy_id,
+                "validation_time": datetime.now(timezone.utc).isoformat()
+            }
+
+        violations = []
+        warnings = []
+
+        # Check if session is within turn limits
+        if session.current_turn >= session.max_turns:
+            violations.append(f"Session has reached maximum turns ({session.max_turns})")
+
+        # Check if session is within budget
+        if session.total_cost_usd >= session.budget_usd:
+            violations.append(f"Session has exceeded budget (${session.budget_usd})")
+
+        # Validate turn message content
+        turn_validation = self.enforce_turn_message_policy(policy_id, turn)
+        if not turn_validation["allowed"]:
+            violations.extend(turn_validation["violations"])
+
+        return {
+            "allowed": len(violations) == 0,
+            "violations": violations,
+            "warnings": warnings,
+            "policy_id": policy_id,
+            "validation_time": datetime.now(timezone.utc).isoformat()
         }
 
     def _create_audit_record(

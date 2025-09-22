@@ -17,7 +17,7 @@ from tab.models.turn_message import TurnMessage, MessageRole
 from tab.models.agent_adapter import AgentAdapter, AgentType, AgentStatus
 from tab.models.policy_configuration import PolicyConfiguration, PermissionMode
 from tab.models.audit_record import AuditRecord, EventType
-from tab.models.orchestration_state import OrchestrationState, FlowState
+from tab.models.orchestration_state import OrchestrationState, ConversationFlow
 
 
 class TestConversationSession:

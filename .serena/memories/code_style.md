@@ -1,0 +1,5 @@
+- Language: Python 3.11+ with strict typing (mypy strict mode enforcing no implicit optional, typed defs, etc.).
+- Formatting: Black (line length 88) paired with isort profile black; Ruff configured for linting.
+- Testing: pytest with asyncio auto mode, markers for unit/integration/contract/slow; coverage targets `src`.
+- Design: Structured adapters per agent (e.g., `ClaudeCodeAdapter`, `CodexAdapter`), policy enforcement via dedicated services, observability via OpenTelemetry SDK/exporters and structured logging; favor dependency-injected services.
+- Docstrings/Comments: Docstring style not explicitly specified; focus on typed interfaces and descriptive naming consistent with enterprise practices.

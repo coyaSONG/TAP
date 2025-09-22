@@ -1,0 +1,4 @@
+- Run targeted pytest suites (`uv run pytest` with appropriate markers) to cover touched areas.
+- Execute static checks aligned with changes: `uv run mypy src`, `uv run ruff check <paths>`, and format with `uv run black <paths>` / `uv run isort <paths>` before finalizing.
+- Confirm CLI/server entrypoints still operate if impacted (`python real_ai_tab.py`, `uv run python -m tab.cli.main serve`).
+- Review OpenTelemetry/audit configuration files `config/` if security policies modified.
