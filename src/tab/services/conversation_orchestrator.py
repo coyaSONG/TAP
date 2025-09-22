@@ -21,9 +21,24 @@ logger = logging.getLogger(__name__)
 class ConversationOrchestrator:
     """Orchestrates multi-agent conversations with turn management and flow control."""
 
-    def __init__(self):
-        """Initialize the conversation orchestrator."""
+    def __init__(
+        self,
+        session_manager,
+        policy_enforcer,
+        agent_configs: Dict[str, Any]
+    ):
+        """Initialize the conversation orchestrator with dependency injection.
+
+        Args:
+            session_manager: Session management service
+            policy_enforcer: Policy enforcement service
+            agent_configs: Agent configuration dictionary
+        """
         self.logger = logging.getLogger(__name__)
+        self.session_manager = session_manager
+        self.policy_enforcer = policy_enforcer
+        self.agent_configs = agent_configs
+
         self._sessions: Dict[str, ConversationSession] = {}
         self._orchestration_states: Dict[str, OrchestrationState] = {}
         self._agent_adapters: Dict[str, BaseAgentAdapter] = {}
@@ -40,42 +55,21 @@ class ConversationOrchestrator:
         self.logger.info("Conversation orchestrator initialized successfully")
 
     async def _initialize_agent_adapters(self) -> None:
-        """Initialize default agent adapters."""
-        # This is a simplified initialization - in production this would load from config
+        """Initialize agent adapters from injected agent configs."""
+        try:
+            # Initialize adapters based on injected agent configs
+            for agent_id, agent_config in self.agent_configs.items():
+                self.logger.info(f"Initializing adapter for agent: {agent_id}")
 
-        # Claude Code adapter
-        claude_config = AgentAdapter(
-            agent_id="claude_code",
-            agent_type="claude_code",
-            name="Claude Code",
-            version="1.0.0",
-            capabilities=["code_analysis", "file_operations", "debugging", "testing"],
-            connection_config={"mode": "headless", "output_format": "stream-json"},
-            status=AgentStatus.AVAILABLE,
-            session_manager={"max_sessions": 3, "timeout_minutes": 30},
-            execution_limits={"max_time_seconds": 120, "max_cost_usd": 0.5}
-        )
+                # For now, just track agent configs without creating actual adapters
+                # Real adapter creation would be done based on agent_type
+                self._agent_adapters[agent_id] = agent_config
+                self.logger.info(f"Agent {agent_id} registered successfully")
 
-        # Codex CLI adapter
-        codex_config = AgentAdapter(
-            agent_id="codex_cli",
-            agent_type="codex_cli",
-            name="Codex CLI",
-            version="1.0.0",
-            capabilities=["code_execution", "bug_reproduction", "patch_generation", "analysis"],
-            connection_config={"mode": "exec", "approval_mode": "auto"},
-            status=AgentStatus.AVAILABLE,
-            session_manager={"max_sessions": 2, "timeout_minutes": 45},
-            execution_limits={"max_time_seconds": 180, "max_cost_usd": 1.0}
-        )
-
-        # Create adapter instances
-        self._agent_adapters["claude_code"] = ClaudeCodeAdapter(claude_config)
-        self._agent_adapters["codex_cli"] = CodexAdapter(codex_config)
-
-        # Start all adapters
-        for adapter in self._agent_adapters.values():
-            await adapter.start()
+        except Exception as e:
+            self.logger.error(f"Failed to initialize agent adapters: {str(e)}")
+            # Continue without adapters for now
+            self._agent_adapters = {}
 
     async def start_conversation(
         self,
@@ -508,6 +502,112 @@ class ConversationOrchestrator:
 
         return {"agents": agents}
 
+    async def get_conversation_context(
+        self,
+        session_id: str,
+        agent_filter: Optional[str] = None,
+        limit: int = 5
+    ) -> List[Dict[str, Any]]:
+        """Get conversation context with unified parameters.
+
+        Args:
+            session_id: Session identifier
+            agent_filter: Optional agent ID to filter messages
+            limit: Maximum number of turns to return (unified from max_turns)
+
+        Returns:
+            List of conversation context messages
+        """
+        try:
+            # Get session from session manager
+            session = await self.session_manager.get_session(session_id)
+            if not session:
+                self.logger.warning(f"Session {session_id} not found")
+                return []
+
+            # Get conversation context using unified parameter name
+            context = session.get_conversation_context(
+                max_turns=limit,  # Map limit to existing max_turns parameter
+                agent_filter=agent_filter
+            )
+
+            return context
+
+        except Exception as e:
+            self.logger.error(f"Error getting conversation context for {session_id}: {e}")
+            return []
+
+    async def process_turn(
+        self,
+        session_id: str,
+        content: str,
+        from_agent: str,
+        to_agent: str,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Process a conversation turn with policy validation.
+
+        Args:
+            session_id: Session identifier
+            content: Turn message content
+            from_agent: Source agent ID
+            to_agent: Target agent ID
+            **kwargs: Additional turn parameters
+
+        Returns:
+            Turn processing result
+        """
+        try:
+            # Get session
+            session = await self.session_manager.get_session(session_id)
+            if not session:
+                return {
+                    "success": False,
+                    "error": f"Session {session_id} not found"
+                }
+
+            # Create turn message
+            from tab.models.turn_message import TurnMessage, MessageRole
+            turn = TurnMessage(
+                session_id=session_id,
+                from_agent=from_agent,
+                to_agent=to_agent,
+                role=MessageRole.ASSISTANT,  # Default role
+                content=content,
+                **kwargs
+            )
+
+            # Validate with policy enforcer
+            policy_result = self.policy_enforcer.validate_turn_addition(
+                session.policy_config, session, turn
+            )
+
+            if not policy_result.get("allowed", False):
+                return {
+                    "success": False,
+                    "error": "Turn rejected by policy",
+                    "violations": policy_result.get("violations", [])
+                }
+
+            # Add turn to session
+            success = session.add_turn_message(turn)
+            if success:
+                # Update session in session manager
+                await self.session_manager.update_session(session_id, session)
+
+            return {
+                "success": success,
+                "turn_id": turn.turn_id,
+                "session_id": session_id
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error processing turn for {session_id}: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
     async def shutdown(self) -> None:
         """Shutdown the orchestrator and cleanup resources."""
         self.logger.info("Shutting down conversation orchestrator")
@@ -524,8 +624,9 @@ class ConversationOrchestrator:
         if self._active_tasks:
             await asyncio.gather(*self._active_tasks.values(), return_exceptions=True)
 
-        # Stop all agent adapters
+        # Stop all agent adapters (if they are actual adapter objects)
         for adapter in self._agent_adapters.values():
-            await adapter.stop()
+            if hasattr(adapter, 'stop'):
+                await adapter.stop()
 
         self.logger.info("Conversation orchestrator shut down")

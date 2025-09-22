@@ -1,0 +1,7 @@
+- Setup: `uv pip install -e ".[dev]"` or `uv sync --dev` (preferred) to install dependencies.
+- Run interactive production bridge: `python real_ai_tab.py`.
+- Launch CLI server: `uv run python -m tab.cli.main serve --port 8000`.
+- Start interactive conversation via CLI: `tab conversation start "<topic>" --agents claude_code codex_cli --policy default` (additional flags for max turns, budget, working dir, etc.).
+- Validate configuration: `tab validate`; export config: `tab export-config`.
+- Testing: `uv run pytest` (markers: `-m unit`, `-m integration`, etc.).
+- Lint/format: `uv run black .`, `uv run isort .`, `uv run ruff check .`, `uv run mypy src`.

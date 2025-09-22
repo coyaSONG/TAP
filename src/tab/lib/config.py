@@ -26,8 +26,8 @@ class ObservabilityConfig(BaseModel):
 
 class LoggingConfig(BaseModel):
     """Configuration for logging settings."""
-    level: str = Field(default="INFO", regex="^(DEBUG|INFO|WARNING|ERROR|CRITICAL)$")
-    format: str = Field(default="structured", regex="^(structured|simple)$")
+    level: str = Field(default="INFO", pattern="^(DEBUG|INFO|WARNING|ERROR|CRITICAL)$")
+    format: str = Field(default="structured", pattern="^(structured|simple)$")
     directory: str = "~/.tab/logs"
     max_file_size: int = Field(default=10 * 1024 * 1024, gt=0)  # 10MB
     backup_count: int = Field(default=5, ge=1)
@@ -38,7 +38,7 @@ class LoggingConfig(BaseModel):
 class AgentConfig(BaseModel):
     """Configuration for agent adapters."""
     agent_id: str
-    agent_type: str = Field(regex="^(claude_code|codex_cli|generic)$")
+    agent_type: str = Field(pattern="^(claude_code|codex_cli|generic)$")
     name: str
     version: str
     enabled: bool = True
@@ -59,7 +59,7 @@ class PolicyConfig(BaseModel):
     policy_id: str
     name: str
     description: str
-    permission_mode: str = Field(default="prompt", regex="^(auto|prompt|deny)$")
+    permission_mode: str = Field(default="prompt", pattern="^(auto|prompt|deny)$")
     allowed_tools: List[str] = field(default_factory=list)
     disallowed_tools: List[str] = field(default_factory=list)
     resource_limits: Dict[str, Union[int, float]] = field(default_factory=dict)
@@ -68,10 +68,10 @@ class PolicyConfig(BaseModel):
     sandbox_enabled: bool = True
     approval_required: List[str] = field(default_factory=list)
 
-    @validator('allowed_tools', 'disallowed_tools')
-    def validate_tool_lists(cls, v, values, field):
+    @validator('disallowed_tools')
+    def validate_tool_lists(cls, v, values):
         """Ensure allowed and disallowed tools don't overlap."""
-        if field.name == 'disallowed_tools' and 'allowed_tools' in values:
+        if 'allowed_tools' in values:
             allowed = set(values['allowed_tools'])
             disallowed = set(v)
             overlap = allowed.intersection(disallowed)
@@ -102,12 +102,30 @@ class SessionConfig(BaseModel):
     storage_directory: str = "~/.tab/sessions"
 
 
+class ServiceContainerConfig(BaseModel):
+    """Configuration for service dependency injection container."""
+    session_manager: Dict[str, Any] = field(default_factory=dict)
+    policy_enforcer: Dict[str, Any] = field(default_factory=dict)
+    conversation_orchestrator: Dict[str, Any] = field(default_factory=dict)
+
+    # Service interface settings
+    async_adapter_pool_size: int = Field(default=20, ge=1, le=100)
+    circuit_breaker_threshold: int = Field(default=5, ge=1)
+    health_check_interval: int = Field(default=60, ge=10)
+
+    # Observability settings
+    trace_service_calls: bool = Field(default=True)
+    log_service_errors: bool = Field(default=True)
+    metrics_collection: bool = Field(default=True)
+
+
 class TABConfig(BaseModel):
     """Main TAB configuration."""
     observability: ObservabilityConfig = field(default_factory=ObservabilityConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     server: ServerConfig = field(default_factory=ServerConfig)
     session: SessionConfig = field(default_factory=SessionConfig)
+    service_container: ServiceContainerConfig = field(default_factory=ServiceContainerConfig)
     agents: Dict[str, AgentConfig] = field(default_factory=dict)
     policies: Dict[str, PolicyConfig] = field(default_factory=dict)
 

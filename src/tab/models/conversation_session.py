@@ -111,15 +111,14 @@ class ConversationSession(BaseModel):
         if len(v) < 2:
             raise ValueError("Must have at least 2 participants")
 
-        # Check for valid agent types
-        valid_agents = ["claude_code", "codex_cli"]
-        for participant in v:
-            if participant not in valid_agents:
-                raise ValueError(f"Invalid agent type: {participant}. Must be one of {valid_agents}")
-
         # Check for duplicates
         if len(set(v)) != len(v):
             raise ValueError("Duplicate participants not allowed")
+
+        # Validate agent IDs are non-empty strings
+        for participant in v:
+            if not isinstance(participant, str) or not participant.strip():
+                raise ValueError("All participants must be non-empty strings")
 
         return v
 
@@ -401,3 +400,176 @@ class ConversationSession(BaseModel):
             analysis["recommendations"].append(f"Monitor budget usage: ${self.total_cost_usd:.3f}/${self.budget_usd}")
 
         return analysis
+
+    def should_auto_complete(self) -> bool:
+        """Determine if conversation should auto-complete based on convergence signals.
+
+        Returns:
+            bool: True if conversation should be automatically completed
+
+        Implementation based on check_convergence_signals() results:
+        - explicit_completion signals → True
+        - resource_exhaustion + high confidence → True
+        - repetitive_content + low progress → True
+        - Otherwise → False
+        """
+        try:
+            convergence = self.check_convergence_signals()
+
+            # Explicit completion signals indicate conversation is done
+            if convergence["signals"]["explicit_completion"]:
+                return True
+
+            # Resource exhaustion with high confidence suggests ending
+            if (convergence["signals"]["resource_exhaustion"] and
+                convergence["confidence"] > 0.8):
+                return True
+
+            # Repetitive content with low confidence suggests stuck conversation
+            if (convergence["signals"]["repetitive_content"] and
+                convergence["confidence"] < 0.4):
+                return True
+
+            # Quality degradation suggests ending conversation
+            if convergence["signals"]["quality_degradation"]:
+                return True
+
+            return False
+
+        except Exception:
+            # If convergence analysis fails, don't auto-complete
+            return False
+
+    def get_summary_stats(self) -> Dict[str, Any]:
+        """Get comprehensive conversation summary statistics.
+
+        Returns:
+            Dict containing:
+            - total_turns: int - Number of turns in conversation
+            - total_cost: float - Total cost accumulated
+            - avg_turn_length: float - Average length of turn content
+            - participants_activity: Dict[str, int] - Turn count per participant
+            - duration_minutes: float - Conversation duration in minutes
+            - convergence_confidence: float - Current convergence confidence (0.0-1.0)
+            - topic: str - Conversation topic
+            - status: str - Current session status
+        """
+        from .turn_message import TurnMessage
+
+        # Calculate total turns
+        total_turns = len([turn for turn in self.turn_history if isinstance(turn, TurnMessage)])
+
+        # Calculate participant activity
+        participants_activity = {participant: 0 for participant in self.participants}
+        total_content_length = 0
+
+        for turn in self.turn_history:
+            if isinstance(turn, TurnMessage):
+                participants_activity[turn.from_agent] = participants_activity.get(turn.from_agent, 0) + 1
+                total_content_length += len(turn.content)
+
+        # Calculate average turn length
+        avg_turn_length = total_content_length / total_turns if total_turns > 0 else 0.0
+
+        # Calculate duration
+        duration_minutes = (self.updated_at - self.created_at).total_seconds() / 60.0
+
+        # Get convergence confidence
+        try:
+            convergence = self.check_convergence_signals()
+            convergence_confidence = convergence["confidence"]
+        except Exception:
+            convergence_confidence = 0.5
+
+        return {
+            "total_turns": total_turns,
+            "total_cost": self.total_cost_usd,
+            "avg_turn_length": avg_turn_length,
+            "participants_activity": participants_activity,
+            "duration_minutes": duration_minutes,
+            "convergence_confidence": convergence_confidence,
+            "topic": self.topic,
+            "status": self.status.value
+        }
+
+    def get_session_status(self) -> Dict[str, Any]:
+        """Get detailed current session status information.
+
+        Returns:
+            Dict containing:
+            - status: str - Current SessionStatus value
+            - turn_progress: Dict[str, int] - {"current": X, "max": Y}
+            - budget_progress: Dict[str, float] - {"used": X, "total": Y}
+            - health_indicators: List[str] - Status indicators and warnings
+            - next_actions: List[str] - Suggested next actions
+            - last_activity: str - ISO timestamp of last activity
+            - active_since: str - ISO timestamp when session became active
+        """
+        health_indicators = []
+        next_actions = []
+
+        # Analyze session health
+        turn_percentage = (self.current_turn / self.max_turns) * 100 if self.max_turns > 0 else 0
+        budget_percentage = (self.total_cost_usd / self.budget_usd) * 100 if self.budget_usd > 0 else 0
+
+        # Turn health indicators
+        if turn_percentage < 50:
+            health_indicators.append("Turn usage healthy")
+        elif turn_percentage < 90:
+            health_indicators.append("Moderate turn usage")
+        else:
+            health_indicators.append("High turn usage - approaching limit")
+
+        # Budget health indicators
+        if budget_percentage < 50:
+            health_indicators.append("Budget usage healthy")
+        elif budget_percentage < 90:
+            health_indicators.append("Moderate budget usage")
+        else:
+            health_indicators.append("High budget usage - approaching limit")
+
+        # Participant activity
+        if len(self.participants) == len(set(turn.from_agent for turn in self.turn_history if hasattr(turn, 'from_agent'))):
+            health_indicators.append("All participants active")
+        else:
+            health_indicators.append("Some participants inactive")
+
+        # Generate next actions based on status and health
+        if self.status == SessionStatus.ACTIVE:
+            if turn_percentage > 80 or budget_percentage > 80:
+                next_actions.append("Consider wrapping up conversation")
+            else:
+                next_actions.append("Continue conversation")
+
+            # Check convergence for additional actions
+            try:
+                convergence = self.check_convergence_signals()
+                if not convergence["should_continue"]:
+                    next_actions.append("Conversation may be ready for completion")
+                else:
+                    next_actions.append("Monitor for completion signals")
+            except Exception:
+                next_actions.append("Check convergence status")
+
+        elif self.status == SessionStatus.COMPLETED:
+            next_actions.append("Session completed successfully")
+        elif self.status == SessionStatus.FAILED:
+            next_actions.append("Review failure reason and consider restart")
+        elif self.status == SessionStatus.TIMEOUT:
+            next_actions.append("Session timed out - consider extending or restarting")
+
+        return {
+            "status": self.status.value,
+            "turn_progress": {
+                "current": self.current_turn,
+                "max": self.max_turns
+            },
+            "budget_progress": {
+                "used": self.total_cost_usd,
+                "total": self.budget_usd
+            },
+            "health_indicators": health_indicators,
+            "next_actions": next_actions,
+            "last_activity": self.updated_at.isoformat(),
+            "active_since": self.created_at.isoformat()
+        }

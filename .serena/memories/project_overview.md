@@ -1,0 +1,5 @@
+- Name: TAP (Twin-Agent Bridge)
+- Purpose: Production-grade orchestration layer enabling secure, policy-driven conversations between multiple AI agents (e.g., Claude Code, Codex CLI) for code analysis, debugging, security review, and similar engineering workflows.
+- Core capabilities: Conversation orchestrator, policy enforcement with approval workflows, structured adapter layer per agent, enterprise-grade observability (OpenTelemetry, audit logging), and CLI/API entrypoints including an interactive `real_ai_tab.py` runner.
+- Code layout: `src/tab` holds CLI (`cli`), shared libs (`lib`), services, and models; `tests` contains unit/contract/integration coverage; root scripts like `real_ai_tab.py` provide production orchestration. Config and specs live in `config/`, `specs/`, `observability/`.
+- Primary runtime: Python 3.11+ application distributed as a CLI (`tab` entrypoint) with optional server mode (`tab.cli.main serve`).

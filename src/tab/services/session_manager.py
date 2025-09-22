@@ -6,7 +6,9 @@ import logging
 import os
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Set
+from typing import Any, Dict, List, Optional, Mapping
+
+from pydantic import BaseModel
 import aiofiles
 
 from tab.models.conversation_session import ConversationSession, SessionStatus
@@ -20,14 +22,19 @@ logger = logging.getLogger(__name__)
 class SessionManager:
     """Manages conversation session lifecycle and state persistence."""
 
-    def __init__(self, storage_path: str = "./data/sessions"):
-        """Initialize session manager.
+    def __init__(self, config: Mapping[str, Any] | BaseModel):
+        """Initialize session manager with dependency injection.
 
         Args:
-            storage_path: Path for session storage
+            config: Session configuration as mapping or Pydantic BaseModel
         """
         self.logger = logging.getLogger(__name__)
-        self.storage_path = Path(storage_path)
+
+        config_data = self._normalize_config(config)
+
+        # Extract configuration with defaults
+        storage_path = config_data.get("storage_directory", "./data/sessions")
+        self.storage_path = Path(storage_path).expanduser()
         self.storage_path.mkdir(parents=True, exist_ok=True)
 
         # In-memory session cache
@@ -35,11 +42,27 @@ class SessionManager:
         self._orchestration_states: Dict[str, OrchestrationState] = {}
         self._session_locks: Dict[str, asyncio.Lock] = {}
 
-        # Cleanup configuration
-        self.auto_cleanup_enabled = True
-        self.cleanup_interval_hours = 24
-        self.session_timeout_hours = 48
+        # Cleanup configuration from config
+        self.auto_cleanup_enabled = config_data.get("auto_cleanup_enabled", True)
+        self.cleanup_interval_hours = config_data.get("cleanup_interval_hours", 24)
+        self.session_timeout_hours = config_data.get("session_timeout_hours", 48)
+
+        # Session defaults from config
+        self.default_max_turns = config_data.get("default_max_turns", 8)
+        self.default_budget_usd = config_data.get("default_budget_usd", 1.0)
+        self.session_timeout = config_data.get("session_timeout", 3600)
+        self.turn_timeout = config_data.get("turn_timeout", 120)
+        self.max_active_sessions = config_data.get("max_active_sessions", 50)
+        self.enable_persistence = config_data.get("enable_persistence", True)
+
         self._cleanup_task: Optional[asyncio.Task] = None
+
+    @staticmethod
+    def _normalize_config(config: Mapping[str, Any] | BaseModel) -> Dict[str, Any]:
+        """Convert supported configuration inputs into a plain dictionary."""
+        if isinstance(config, BaseModel):
+            return config.model_dump()
+        return dict(config)
 
     async def initialize(self) -> None:
         """Initialize session manager and load existing sessions."""
